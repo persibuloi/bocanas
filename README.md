@@ -28,6 +28,28 @@ Una aplicación web moderna y completamente funcional para gestionar apuestas de
 - **Estado**: React Hooks personalizados
 - **Routing**: React Router 6
 
+## 🆕 Cambios recientes – Bocanas
+
+Se implementaron mejoras enfocadas en la experiencia del usuario para la gestión de bocanas:
+
+- **Persistencia de filtros en listado de bocanas** (`src/pages/Bocanas.tsx`):
+  - Guarda automáticamente filtros, búsqueda y orden en `localStorage`.
+  - Carga filtros desde `localStorage` al abrir y también desde query params (URL).
+  - Nuevo botón “Ir al dashboard” que navega a `'/bocanas-dashboard'` conservando los filtros en la URL.
+
+- **Persistencia de filtros en Dashboard** (`src/pages/BocanasDashboard.tsx`):
+  - Inicializa filtros desde query params y, si no existen, desde `localStorage`.
+  - Sincroniza URL y estado, permitiendo compartir enlaces con filtros activos.
+  - Acceso rápido de vuelta al listado manteniendo contexto.
+
+- **Mejoras UX en Nueva Bocana** (`src/pages/NuevaBocana.tsx`):
+  - Autocomplete de jugador con sugerencias filtradas y persistencia del último seleccionado.
+  - Validación inline de campos (jugador, torneo, jornada ≥ 1, tipo).
+  - Atajos de teclado: `Esc` limpia el formulario y `Enter` envía.
+  - Normalización de jornada: mínimo 1 y entero.
+
+Estas mejoras apuntan a reducir fricción, mantener el contexto entre vistas y acelerar el registro y gestión de penalidades.
+
 ## 🚀 URL de la Aplicación
 
 **🌐 Aplicación Desplegada**: [https://jlg1fzp69me2.space.minimax.io](https://jlg1fzp69me2.space.minimax.io)

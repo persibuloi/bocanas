@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApostadores } from '../hooks/useApostadores'
 import { useBocanas } from '../hooks/useBocanas'
@@ -21,6 +21,16 @@ const NuevaBocana: React.FC = () => {
     status: 'Pendiente' as 'Pendiente' | 'Pagada',
   })
   const [submitting, setSubmitting] = useState(false)
+  const [errors, setErrors] = useState<{ [k: string]: string }>({})
+  const [jugadorQuery, setJugadorQuery] = useState('')
+  const [showSuggestions, setShowSuggestions] = useState(false)
+
+  // Lista filtrada para el autocomplete (evita usar hooks dentro del JSX)
+  const filteredApostadores = useMemo(() => {
+    const q = jugadorQuery.trim().toLowerCase()
+    if (!q) return apostadores.slice(0, 8)
+    return apostadores.filter(a => a.fields.Nombre.toLowerCase().includes(q)).slice(0, 8)
+  }, [apostadores, jugadorQuery])
 
   // Forzar una carga al montar, para asegurar que el select tenga datos
   useEffect(() => {
@@ -36,17 +46,64 @@ const NuevaBocana: React.FC = () => {
     }
   }, [])
 
+  // Persistencia del último torneo seleccionado
+  useEffect(() => {
+    const t = localStorage.getItem('ultimo_torneo_bocana')
+    if (t) {
+      setForm(prev => ({ ...prev, torneo: t }))
+    }
+  }, [])
+
+  // Persistencia del último tipo seleccionado
+  useEffect(() => {
+    const tp = localStorage.getItem('ultimo_tipo_bocana')
+    if (tp) {
+      setForm(prev => ({ ...prev, tipo: tp }))
+    }
+  }, [])
+
+  // Persistencia del último jugador seleccionado
+  useEffect(() => {
+    const jg = localStorage.getItem('ultimo_jugador_bocana')
+    if (jg) {
+      setForm(prev => ({ ...prev, jugador_id: jg }))
+      // Establecer query con el nombre si existe
+      const name = apostadores.find(a => a.id === jg)?.fields.Nombre
+      if (name) setJugadorQuery(name)
+    }
+  }, [apostadores])
+
+  const validate = () => {
+    const e: { [k: string]: string } = {}
+    if (!form.jugador_id) e.jugador_id = 'Selecciona un jugador'
+    if (!form.torneo) e.torneo = 'Selecciona un torneo'
+    const jNum = Number(form.jornada)
+    if (!form.jornada) e.jornada = 'Ingresa la jornada'
+    else if (!Number.isFinite(jNum) || jNum < 1) e.jornada = 'La jornada debe ser un número ≥ 1'
+    if (!form.tipo) e.tipo = 'Selecciona un tipo'
+    setErrors(e)
+    return Object.keys(e).length === 0
+  }
+
   const onChange: React.ChangeEventHandler<HTMLInputElement | HTMLSelectElement> = (e) => {
     const { name, value } = e.target
     setForm(prev => ({ ...prev, [name]: value }))
     if (name === 'jornada') {
       localStorage.setItem('ultima_jornada_bocana', value)
     }
+    if (name === 'torneo') {
+      localStorage.setItem('ultimo_torneo_bocana', value)
+    }
+    if (name === 'tipo') {
+      localStorage.setItem('ultimo_tipo_bocana', value)
+    }
+    // Validación instantánea
+    setErrors(prev => ({ ...prev, [name]: '' }))
   }
 
   const onSubmit: React.FormEventHandler = async (e) => {
     e.preventDefault()
-    if (!form.jugador_id || !form.torneo || !form.jornada || !form.tipo) return
+    if (!validate()) return
     try {
       setSubmitting(true)
       await crearBocana({
@@ -60,6 +117,12 @@ const NuevaBocana: React.FC = () => {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const clearForm = () => {
+    setForm({ jugador_id: '', torneo: '', jornada: '', tipo: '', status: 'Pendiente' })
+    setJugadorQuery('')
+    setErrors({})
   }
 
   return (
@@ -79,7 +142,16 @@ const NuevaBocana: React.FC = () => {
         </div>
       </div>
 
-      <form onSubmit={onSubmit} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <form
+        onSubmit={onSubmit}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            clearForm()
+          }
+        }}
+        className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
+      >
         <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900 flex items-center">
             <PlusCircle size={20} className="mr-2 text-blue-600" />
@@ -89,24 +161,47 @@ const NuevaBocana: React.FC = () => {
 
         <div className="p-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
+            <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                 <User size={16} className="mr-1 text-gray-500" /> Jugador *
               </label>
-              <select name="jugador_id" value={form.jugador_id} onChange={onChange} required disabled={loading} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors duration-200 disabled:bg-gray-100">
-                {loading ? (
-                  <option value="">Cargando jugadores...</option>
-                ) : apostadores.length === 0 ? (
-                  <option value="">No hay jugadores</option>
-                ) : (
-                  <>
-                    <option value="">Selecciona un jugador</option>
-                    {apostadores.map(a => (
-                      <option key={a.id} value={a.id}>{a.fields.Nombre}</option>
+              <input
+                type="text"
+                value={jugadorQuery}
+                onChange={(e) => {
+                  setJugadorQuery(e.target.value)
+                  setShowSuggestions(true)
+                  // Al escribir, limpiar selección hasta confirmar
+                  setForm(prev => ({ ...prev, jugador_id: '' }))
+                  setErrors(prev => ({ ...prev, jugador_id: '' }))
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                placeholder={loading ? 'Cargando jugadores...' : 'Escribe para buscar...'}
+                disabled={loading}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors duration-200 disabled:bg-gray-100"
+              />
+              {errors.jugador_id && <p className="mt-1 text-xs text-red-600">{errors.jugador_id}</p>}
+              {showSuggestions && jugadorQuery.trim() && (
+                <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-auto">
+                  {filteredApostadores.map(a => (
+                      <button
+                        type="button"
+                        key={a.id}
+                        onClick={() => {
+                          setForm(prev => ({ ...prev, jugador_id: a.id }))
+                          setJugadorQuery(a.fields.Nombre)
+                          setShowSuggestions(false)
+                          localStorage.setItem('ultimo_jugador_bocana', a.id)
+                          setErrors(prev => ({ ...prev, jugador_id: '' }))
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                      >{a.fields.Nombre}</button>
                     ))}
-                  </>
-                )}
-              </select>
+                  {filteredApostadores.length === 0 && (
+                    <div className="px-3 py-2 text-sm text-gray-500">Sin coincidencias</div>
+                  )}
+                </div>
+              )}
               {!loading && apostadores.length === 0 && (
                 <button type="button" onClick={fetchApostadores} className="mt-2 text-sm text-blue-600 hover:underline">Reintentar cargar jugadores</button>
               )}
@@ -115,10 +210,11 @@ const NuevaBocana: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                 <Trophy size={16} className="mr-1 text-gray-500" /> Torneo *
               </label>
-              <select name="torneo" value={form.torneo} onChange={onChange} required className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors duration-200">
+              <select name="torneo" value={form.torneo} onChange={onChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors duration-200">
                 <option value="">Selecciona un torneo</option>
                 {torneos.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
+              {errors.torneo && <p className="mt-1 text-xs text-red-600">{errors.torneo}</p>}
             </div>
           </div>
 
@@ -127,14 +223,31 @@ const NuevaBocana: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                 <Calendar size={16} className="mr-1 text-gray-500" /> Jornada *
               </label>
-              <input type="number" name="jornada" min="0" value={form.jornada} onChange={onChange} required placeholder="Ej: 3" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors duration-200" />
+              <input
+                type="number"
+                name="jornada"
+                min="1"
+                value={form.jornada}
+                onChange={(e) => {
+                  const v = e.target.value
+                  const n = Number(v)
+                  const norm = v === '' ? '' : String(Number.isFinite(n) ? Math.max(1, Math.trunc(n)) : '')
+                  setForm(prev => ({ ...prev, jornada: norm as any }))
+                  setErrors(prev => ({ ...prev, jornada: '' }))
+                  localStorage.setItem('ultima_jornada_bocana', String(norm))
+                }}
+                placeholder="Ej: 3"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors duration-200"
+              />
+              {errors.jornada && <p className="mt-1 text-xs text-red-600">{errors.jornada}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Tipo *</label>
-              <select name="tipo" value={form.tipo} onChange={onChange} required className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors duration-200">
+              <select name="tipo" value={form.tipo} onChange={onChange} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors duration-200">
                 <option value="">Selecciona un tipo</option>
                 {tipos.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
+              {errors.tipo && <p className="mt-1 text-xs text-red-600">{errors.tipo}</p>}
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
