@@ -27,7 +27,7 @@ export const useComidaOptions = () => {
           new Set(
             bocanas
               .map(b => b.fields.Comida)
-              .filter((comida): comida is string => {
+              .filter((comida): comida is NonNullable<typeof comida> => {
                 return comida !== null && comida !== undefined && comida.trim() !== '';
               })
           )
@@ -77,7 +77,7 @@ export const useComidaOptions = () => {
             new Set(
               bocanas
                 .map(b => b.fields.Comida)
-                .filter((comida): comida is string => {
+                .filter((comida): comida is NonNullable<typeof comida> => {
                   return comida !== null && comida !== undefined && comida.trim() !== '';
                 })
             )

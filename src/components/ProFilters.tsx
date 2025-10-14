@@ -245,9 +245,12 @@ const ProFilters: React.FC<ProFiltersProps> = ({
                     className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white appearance-none"
                   >
                     <option value="">Todas las comidas</option>
-                    {kpis.topComidas.map(([comida]) => (
-                      <option key={comida} value={comida}>🍽️ {comida}</option>
-                    ))}
+                    {/* Opciones de comida se cargarán dinámicamente */}
+                    <option value="Boneless">🍽️ Boneless</option>
+                    <option value="Pizza">🍽️ Pizza</option>
+                    <option value="Churrasco Bocas">🍽️ Churrasco Bocas</option>
+                    <option value="Paninni Churrasco">🍽️ Paninni Churrasco</option>
+                    <option value="Quesadilla">🍽️ Quesadilla</option>
                   </select>
                   <ChevronDown size={16} className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none" />
                 </div>
