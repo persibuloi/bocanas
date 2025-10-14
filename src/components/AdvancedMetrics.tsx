@@ -14,6 +14,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { Bocana } from '../lib/airtable';
+import { useIsMobile } from '../hooks/use-mobile';
 
 interface AdvancedMetricsProps {
   data: Bocana[];
@@ -21,6 +22,7 @@ interface AdvancedMetricsProps {
 }
 
 const AdvancedMetrics: React.FC<AdvancedMetricsProps> = ({ data, loading = false }) => {
+  const isMobile = useIsMobile();
   const metrics = React.useMemo(() => {
     if (data.length === 0) return null;
 
@@ -91,9 +93,15 @@ const AdvancedMetrics: React.FC<AdvancedMetricsProps> = ({ data, loading = false
 
   if (loading || !metrics) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className={`grid gap-4 mb-8 ${
+        isMobile 
+          ? 'grid-cols-2' 
+          : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4'
+      }`}>
         {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="bg-white rounded-2xl p-6 border border-gray-200 animate-pulse">
+          <div key={i} className={`bg-white rounded-2xl border border-gray-200 animate-pulse ${
+            isMobile ? 'p-3' : 'p-6'
+          }`}>
             <div className="flex items-center justify-between">
               <div className="space-y-2">
                 <div className="h-4 bg-gray-200 rounded w-24"></div>
@@ -119,9 +127,10 @@ const AdvancedMetrics: React.FC<AdvancedMetricsProps> = ({ data, loading = false
   }> = ({ title, value, subtitle, icon: Icon, gradient, trend, onClick }) => (
     <div 
       className={`
-        relative overflow-hidden bg-white rounded-2xl border-2 border-gray-100 p-6 
+        relative overflow-hidden bg-white rounded-2xl border-2 border-gray-100
         transition-all duration-300 hover:shadow-xl hover:scale-105 group
         ${onClick ? 'cursor-pointer' : ''}
+        ${isMobile ? 'p-4' : 'p-6'}
       `}
       onClick={onClick}
     >
@@ -132,7 +141,9 @@ const AdvancedMetrics: React.FC<AdvancedMetricsProps> = ({ data, loading = false
         <div className="flex items-start justify-between mb-4">
           <div>
             <p className="text-sm font-semibold text-gray-600 mb-1">{title}</p>
-            <p className="text-3xl font-bold text-gray-900">
+            <p className={`font-bold text-gray-900 ${
+              isMobile ? 'text-xl' : 'text-3xl'
+            }`}>
               {typeof value === 'number' && value % 1 !== 0 ? value.toFixed(1) : value}
             </p>
             <p className="text-sm text-gray-500 mt-1">{subtitle}</p>
@@ -160,7 +171,11 @@ const AdvancedMetrics: React.FC<AdvancedMetricsProps> = ({ data, loading = false
   );
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div className={`grid gap-4 mb-8 ${
+      isMobile 
+        ? 'grid-cols-2' 
+        : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4'
+    }`}>
       <MetricCard
         title="Tasa de Cumplimiento"
         value={`${metrics.tasaCumplimiento.toFixed(1)}%`}

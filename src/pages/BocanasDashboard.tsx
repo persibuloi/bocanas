@@ -12,6 +12,7 @@ import ProFilters from '../components/ProFilters'
 import AdvancedMetrics from '../components/AdvancedMetrics'
 import TopDeudores from '../components/TopDeudores'
 import { useExport } from '../hooks/useExport'
+import { useIsMobile } from '../hooks/use-mobile'
 
 const statuses = ['Pendiente', 'Pagada'] as const
 const torneos = ['X Empresarial', 'XI Empresarial', 'XII Empresarial'] as const
@@ -34,6 +35,7 @@ const BocanasDashboard: React.FC = () => {
   const location = useLocation()
   const navigate = useNavigate()
   const { exportToCSV, shareWhatsApp } = useExport()
+  const isMobile = useIsMobile()
   
   // Helper: obtener el ID de registro del jugador (soporta 'Jugador' o 'Jugador_ID' en array o string)
   const getJugadorRecordId = (b: Bocana): string | undefined => {
@@ -409,7 +411,11 @@ const BocanasDashboard: React.FC = () => {
       </div>
       
       {/* Sección de analytics avanzados */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+      <div className={`grid gap-6 mb-8 ${
+        isMobile 
+          ? 'grid-cols-1' 
+          : 'grid-cols-1 lg:grid-cols-3'
+      }`}>
         {/* Top Deudores Súper Elegante */}
         <TopDeudores
           deudores={kpis.topPendDet}

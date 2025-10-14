@@ -11,6 +11,7 @@ import {
   Edit3,
   Share2
 } from 'lucide-react';
+import { useIsMobile } from '../hooks/use-mobile';
 import { Bocana } from '../lib/airtable';
 
 const comidas = ['Boneless', 'Pizza', 'Churrasco Bocas', 'Paninni Churrasco', 'Quesadilla'] as const;
@@ -34,6 +35,7 @@ const BocanaCard: React.FC<BocanaCardProps> = ({
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedComida, setSelectedComida] = useState<string>(comidas[0]);
   const [processing, setProcessing] = useState(false);
+  const isMobile = useIsMobile();
 
   const isPending = bocana.fields.Status === 'Pendiente';
 
@@ -83,7 +85,7 @@ const BocanaCard: React.FC<BocanaCardProps> = ({
         `}
       >
         {/* Header con checkbox y estado */}
-        <div className="p-4 border-b border-gray-100">
+        <div className={`${isMobile ? 'p-3' : 'p-4'} border-b border-gray-100`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <input
@@ -148,17 +150,17 @@ const BocanaCard: React.FC<BocanaCardProps> = ({
         </div>
 
         {/* Contenido principal */}
-        <div className="p-4">
+        <div className={`${isMobile ? 'p-3' : 'p-4'}`}>
           {/* Jugador */}
           <div className="flex items-center mb-3">
-            <User size={16} className="text-gray-500 mr-2" />
-            <span className="font-semibold text-gray-900">
+            <User size={isMobile ? 14 : 16} className="text-gray-500 mr-2" />
+            <span className={`font-semibold text-gray-900 ${isMobile ? 'text-sm' : ''}`}>
               {bocana.fields.Jugador_Nombre || 'Sin nombre'}
             </span>
           </div>
 
           {/* Detalles en grid */}
-          <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className={`grid ${isMobile ? 'grid-cols-1 gap-2' : 'grid-cols-2 gap-3'} mb-4`}>
             <div className="flex items-center">
               <Trophy size={14} className="text-gray-400 mr-2" />
               <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs border ${torneoColor(bocana.fields.Torneo)}`}>
@@ -200,12 +202,14 @@ const BocanaCard: React.FC<BocanaCardProps> = ({
 
         {/* Acción rápida para pendientes */}
         {isPending && (
-          <div className="px-4 pb-4">
+          <div className={`${isMobile ? 'px-3 pb-3' : 'px-4 pb-4'}`}>
             <button
               onClick={() => setShowPaymentModal(true)}
-              className="w-full inline-flex items-center justify-center px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm font-medium transition-colors"
+              className={`w-full inline-flex items-center justify-center px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium transition-colors ${
+                isMobile ? 'text-xs' : 'text-sm'
+              }`}
             >
-              <CheckCircle size={16} className="mr-2" />
+              <CheckCircle size={isMobile ? 14 : 16} className="mr-2" />
               Marcar como pagada
             </button>
           </div>

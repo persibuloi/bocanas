@@ -13,6 +13,7 @@ import {
   RotateCcw,
   CheckCircle2
 } from 'lucide-react';
+import { useIsMobile } from '../hooks/use-mobile';
 
 interface FilterOption {
   value: string;
@@ -53,6 +54,7 @@ const ProFilters: React.FC<ProFiltersProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const isMobile = useIsMobile();
 
   const activeFiltersCount = Object.values(filters).filter(Boolean).length;
 

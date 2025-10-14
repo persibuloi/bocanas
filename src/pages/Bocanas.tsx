@@ -5,11 +5,13 @@ import { useApostadores } from '../hooks/useApostadores'
 import { useSelection } from '../hooks/useSelection'
 import { useExport } from '../hooks/useExport'
 import { useComidaOptions } from '../hooks/useComidaOptions'
+import { useIsMobile } from '../hooks/use-mobile'
 import { CheckCircle, Filter, Loader2, Search, Utensils, XCircle, Clock, Grid3X3, List, LayoutGrid, User, Trophy, Calendar, Target } from 'lucide-react'
 import BulkActions from '../components/BulkActions'
 import QuickStats from '../components/QuickStats'
 import AdvancedFilters from '../components/AdvancedFilters'
 import BocanaCard from '../components/BocanaCard'
+import MobileBocanaCard from '../components/MobileBocanaCard'
 import { Bocana } from '../lib/airtable'
 
 const statuses = ['Pendiente', 'Pagada'] as const
@@ -45,6 +47,7 @@ const Bocanas: React.FC = () => {
   
   const { exportToCSV, shareWhatsApp } = useExport()
   const { comidas, loading: loadingComidas } = useComidaOptions()
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     fetchApostadores()
@@ -323,31 +326,33 @@ const Bocanas: React.FC = () => {
           <Utensils size={28} className="mr-3 text-blue-600" /> Bocanas Pro
         </h1>
         <div className="flex items-center space-x-3">
-          {/* Toggle de vista */}
-          <div className="flex items-center bg-gray-100 rounded-lg p-1">
-            <button
-              onClick={() => setViewMode('table')}
-              className={`p-2 rounded-md transition-colors ${
-                viewMode === 'table'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
-              title="Vista de tabla"
-            >
-              <List size={18} />
-            </button>
-            <button
-              onClick={() => setViewMode('cards')}
-              className={`p-2 rounded-md transition-colors ${
-                viewMode === 'cards'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
-              title="Vista de tarjetas"
-            >
-              <LayoutGrid size={18} />
-            </button>
-          </div>
+          {/* Toggle de vista - oculto en móvil */}
+          {!isMobile && (
+            <div className="flex items-center bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('table')}
+                className={`p-2 rounded-md transition-colors ${
+                  viewMode === 'table'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+                title="Vista de tabla"
+              >
+                <List size={18} />
+              </button>
+              <button
+                onClick={() => setViewMode('cards')}
+                className={`p-2 rounded-md transition-colors ${
+                  viewMode === 'cards'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+                title="Vista de tarjetas"
+              >
+                <LayoutGrid size={18} />
+              </button>
+            </div>
+          )}
           
           <button
             onClick={() => {
@@ -421,34 +426,44 @@ const Bocanas: React.FC = () => {
               >
                 <CheckCircle size={16} className="mr-2" />
                 Marcar todas como pagadas
-              </button>
-          </div>
+          </button>
+        </div>
           </div>
         );
       })()}
 
       {/* Contador de resultados */}
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <span className="text-sm text-gray-600">
+      <div className={`mb-4 flex items-center justify-between ${
+        isMobile ? 'flex-col space-y-2' : 'flex-row'
+      }`}>
+        <div className={`flex items-center ${
+          isMobile ? 'flex-col space-y-1 text-center' : 'space-x-4'
+        }`}>
+          <span className={`text-gray-600 ${
+            isMobile ? 'text-xs' : 'text-sm'
+          }`}>
             Mostrando <span className="font-semibold text-gray-900">{sorted.length}</span> de <span className="font-semibold text-gray-900">{bocanas.length}</span> bocanas
           </span>
           {selection.selectedCount > 0 && (
-            <span className="text-sm text-blue-600 font-medium">
+            <span className={`text-blue-600 font-medium ${
+              isMobile ? 'text-xs' : 'text-sm'
+            }`}>
               {selection.selectedCount} seleccionada{selection.selectedCount !== 1 ? 's' : ''}
             </span>
           )}
         </div>
         
         {sorted.length > 0 && (
-          <div className="text-sm text-gray-500">
+          <div className={`text-gray-500 ${
+            isMobile ? 'text-xs' : 'text-sm'
+          }`}>
             {sorted.filter(b => b.fields.Status === 'Pendiente').length} pendientes • {sorted.filter(b => b.fields.Status === 'Pagada').length} pagadas
-        </div>
+          </div>
         )}
       </div>
 
       {/* Contenido principal */}
-      {viewMode === 'table' ? (
+      {viewMode === 'table' && !isMobile ? (
         // Vista de tabla moderna
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden relative">
           {/* Overlay de procesamiento */}
@@ -681,14 +696,14 @@ const Bocanas: React.FC = () => {
                                 >
                                   <Utensils size={12} className="mr-1" />
                                   Pagar
-                                </button>
+                        </button>
                               </>
                             ) : (
                               <div className="inline-flex items-center px-2 py-1 bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 rounded-full border border-green-200">
                                 <CheckCircle size={12} className="mr-1 text-green-600" />
                                 <span className="font-semibold text-xs">Pagada</span>
-                              </div>
-                            )}
+                        </div>
+                      )}
                           </div>
                         </td>
                         
@@ -707,8 +722,12 @@ const Bocanas: React.FC = () => {
         </div>
       </div>
       ) : (
-        // Vista de cards
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        // Vista de cards (siempre en móvil)
+        <div className={`grid gap-4 ${
+          isMobile 
+            ? 'grid-cols-1' 
+            : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+        }`}>
           {loading ? (
             Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="bg-white rounded-lg border border-gray-200 p-4 animate-pulse">
@@ -724,17 +743,27 @@ const Bocanas: React.FC = () => {
             </div>
           ) : (
             sorted.map(b => (
-              <BocanaCard
-                key={b.id}
-                bocana={b}
-                isSelected={selection.isSelected(b)}
-                onToggleSelect={() => selection.toggleItem(b)}
-                onMarkAsPaid={async (id, comida) => {
-                  await actualizarBocana(id, { Status: 'Pagada', Comida: comida as any })
-                  await fetchBocanas()
-                }}
-                onShare={handleShareSingle}
-              />
+              isMobile ? (
+                <MobileBocanaCard
+                  key={b.id}
+                  bocana={b}
+                  isSelected={selection.isSelected(b)}
+                  onToggleSelect={() => selection.toggleItem(b)}
+                  onPayment={() => openPaymentModal(b.id, b.fields.Jugador_Nombre || 'Sin nombre')}
+                />
+              ) : (
+                <BocanaCard
+                  key={b.id}
+                  bocana={b}
+                  isSelected={selection.isSelected(b)}
+                  onToggleSelect={() => selection.toggleItem(b)}
+                  onMarkAsPaid={async (id, comida) => {
+                    await actualizarBocana(id, { Status: 'Pagada', Comida: comida as any })
+                    await fetchBocanas()
+                  }}
+                  onShare={handleShareSingle}
+                />
+              )
             ))
           )}
         </div>
@@ -763,9 +792,15 @@ const Bocanas: React.FC = () => {
       {/* Modal de pago individual */}
       {paymentModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+          <div className={`bg-white shadow-2xl w-full overflow-hidden ${
+            isMobile 
+              ? 'rounded-t-2xl fixed bottom-0 left-0 right-0 max-h-[80vh]' 
+              : 'rounded-2xl max-w-md mx-4'
+          }`}>
             {/* Header del modal */}
-            <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-6 py-4">
+            <div className={`bg-gradient-to-r from-green-600 to-emerald-600 ${
+              isMobile ? 'px-4 py-3' : 'px-6 py-4'
+            }`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <div className="w-10 h-10 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
@@ -787,7 +822,7 @@ const Bocanas: React.FC = () => {
             </div>
             
             {/* Contenido del modal */}
-            <div className="p-6">
+            <div className={isMobile ? 'p-4' : 'p-6'}>
               <div className="mb-6">
                 <label className="block text-sm font-semibold text-gray-700 mb-3">
                   Selecciona el plato que pagó:
@@ -805,14 +840,15 @@ const Bocanas: React.FC = () => {
                     <p className="text-sm">Usando opciones por defecto</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-3">
+                  <div className="grid grid-cols-1 gap-2">
                     {comidas.map((comida) => (
                       <button
                         key={comida}
                         onClick={() => setSelectedComida(comida)}
                         disabled={processingPayment}
                         className={`
-                          flex items-center justify-between p-4 rounded-xl border-2 transition-all duration-200
+                          flex items-center justify-between rounded-xl border-2 transition-all duration-200
+                          ${isMobile ? 'p-3' : 'p-4'}
                           ${
                             selectedComida === comida
                               ? 'border-green-500 bg-green-50 text-green-800'
