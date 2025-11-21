@@ -108,7 +108,7 @@ const BocanasDashboard: React.FC = () => {
         const lf = JSON.parse(raw)
         if (lf && typeof lf === 'object') setFilters(lf)
       }
-    } catch {}
+    } catch { /* empty */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -116,7 +116,7 @@ const BocanasDashboard: React.FC = () => {
   useEffect(() => {
     try {
       localStorage.setItem('bocanas_dashboard_filters', JSON.stringify(filters))
-    } catch {}
+    } catch { /* empty */ }
     const params = new URLSearchParams()
     if (filters.status) params.set('status', String(filters.status))
     if (filters.torneo) params.set('torneo', String(filters.torneo))
