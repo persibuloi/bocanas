@@ -237,7 +237,7 @@ export const bocanasApi = {
         // NO enviar Comida si no viene en creación
         ...(parsed.Comida ? { Comida: parsed.Comida } : {}),
       }
-      const linkFieldCandidates = ['Jugador_ID', 'Jugador']
+      const linkFieldCandidates = ['Jugador_ID', 'Jugador', 'Apostador', 'Apostador_ID']
       let lastErr: any = null
       for (const linkField of linkFieldCandidates) {
         // 1) intentar como arreglo de IDs (link-to-record)
@@ -249,7 +249,21 @@ export const bocanasApi = {
             const { data: resp } = await api.post('/Bocanas', { records: [{ fields }] })
             return resp.records[0]
           } catch (e: any) {
-            lastErr = e
+            // Fallback: Si falla con 422 y tenía comida, intentar sin comida (posible error de opción no válida en Single Select)
+            if (e?.response?.status === 422 && fields.Comida) {
+              try {
+                const { Comida, ...fieldsNoFood } = fields
+                try { console.debug('bocanas.create fallback: retrying without Comida field due to 422', { fieldsNoFood }) } catch { /* empty */ }
+                const { data: resp } = await api.post('/Bocanas', { records: [{ fields: fieldsNoFood }] })
+                return resp.records[0]
+              } catch (innerE) {
+                // Si falla también sin comida, entonces el error es otro
+                lastErr = innerE
+              }
+            } else {
+              lastErr = e
+            }
+            
             if (!(e?.response?.status === 422)) break
             // seguir con siguiente variante o siguiente campo
             continue
@@ -278,7 +292,7 @@ export const bocanasApi = {
         return resp.records[0]
       }
       // Si cambia Jugador, intentar con ambos nombres de campo y variaciones
-      const linkFieldCandidatesU = ['Jugador_ID', 'Jugador']
+      const linkFieldCandidatesU = ['Jugador_ID', 'Jugador', 'Apostador', 'Apostador_ID']
       let lastErrU: any = null
       for (const linkField of linkFieldCandidatesU) {
         for (const variant of ['array', 'string'] as const) {
