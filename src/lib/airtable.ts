@@ -1,7 +1,6 @@
-import { api } from '../services/api';
-export * from '../types';
-export * from '../services/bocanas';
-export * from '../services/betting';
-export * from '../services/estadisticas';
+import { api } from '../services/api'
+export * from '../types'
+export * from '../services/bocanas'
+export * from '../services/apostadores'
 
-export default api;
+export default api

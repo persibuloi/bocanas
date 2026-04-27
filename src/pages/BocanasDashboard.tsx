@@ -13,9 +13,9 @@ import AdvancedMetrics from '../components/AdvancedMetrics'
 import TopDeudores from '../components/TopDeudores'
 import { useExport } from '../hooks/useExport'
 import { useIsMobile } from '../hooks/use-mobile'
+import { TORNEOS as torneos } from '../lib/torneos'
 
 const statuses = ['Pendiente', 'Pagada'] as const
-const torneos = ['X Empresarial', 'XI Empresarial', 'XII Empresarial'] as const
 
 interface Filters {
   status?: (typeof statuses)[number]
@@ -385,7 +385,7 @@ const BocanasDashboard: React.FC = () => {
                 <button
                   className="ml-2 hover:text-green-900"
                   onClick={async () => {
-                    const next = { ...filters, comida: undefined, status: undefined as any }
+                    const next: Filters = { ...filters, comida: undefined, status: undefined }
                     setFilters(next)
                     await Promise.all([loadAll(next), fetchJugadores()])
                   }}
@@ -442,7 +442,7 @@ const BocanasDashboard: React.FC = () => {
                 type="button"
                 className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
                 onClick={async () => {
-                  const next = { ...filters, comida: undefined, status: undefined as any }
+                  const next: Filters = { ...filters, comida: undefined, status: undefined }
                   setFilters(next)
                   await Promise.all([loadAll(next), fetchJugadores()])
                 }}

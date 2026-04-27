@@ -1,13 +1,30 @@
 import { useState, useEffect } from 'react';
 import { Bocana, bocanasApi } from '../lib/airtable';
+import { Torneo } from '../lib/torneos';
+import { logger } from '../lib/logger';
 import toast from 'react-hot-toast';
 
 export interface UseBocanasFilters {
   status?: 'Pagada' | 'Pendiente'
-  torneo?: 'X Empresarial' | 'XI Empresarial' | 'XII Empresarial'
+  torneo?: Torneo
   jugadorId?: string
   jugadorNombre?: string
   jornada?: number
+}
+
+const matchesJugador = (record: Bocana, filters?: UseBocanasFilters): boolean => {
+  if (!filters?.jugadorNombre && !filters?.jugadorId) return true
+  const fields = (record.fields ?? {}) as Record<string, unknown>
+  const targetName = (filters.jugadorNombre || '').toLowerCase()
+  const targetId = filters.jugadorId || ''
+  const values = Object.values(fields)
+  const nameHit = targetName
+    ? values.some(v => typeof v === 'string' && v.toLowerCase().includes(targetName))
+    : false
+  const idHit = targetId
+    ? values.some(v => Array.isArray(v) ? v.includes(targetId) : (typeof v === 'string' && v.includes(targetId)))
+    : false
+  return (targetName ? nameHit : false) || (targetId ? idHit : false)
 }
 
 export const useBocanas = (filters?: UseBocanasFilters) => {
@@ -22,33 +39,14 @@ export const useBocanas = (filters?: UseBocanasFilters) => {
       setLoading(true)
       setError(null)
       const page = await bocanasApi.getPage(filters)
-      try { console.debug('useBocanas.fetchBocanas page size:', page.records?.length, 'nextOffset:', page.offset, 'filters:', filters) } catch {}
-      let records = page.records
-      // Filtro local robusto por jugador
-      if (filters?.jugadorNombre || filters?.jugadorId) {
-        const targetName = (filters?.jugadorNombre || '').toLowerCase()
-        const targetRec = filters?.jugadorId || ''
-        try { console.debug('useBocanas.fetchBocanas applying local filters:', { targetName, targetRec }) } catch {}
-        records = records.filter(r => {
-          const f: Record<string, any> = r.fields as any
-          const values = Object.values(f)
-          const nameHit = targetName
-            ? values.some(v => typeof v === 'string' && v.toLowerCase().includes(targetName))
-            : false
-          const idHit = targetRec
-            ? values.some(v => Array.isArray(v) ? v.includes(targetRec) : (typeof v === 'string' && v.includes(targetRec)))
-            : false
-          return (targetName ? nameHit : false) || (targetRec ? idHit : false)
-        })
-        try { console.debug('useBocanas.fetchBocanas after local filter size:', records.length) } catch {}
-      }
+      const records = page.records.filter(r => matchesJugador(r, filters))
       setBocanas(records)
       setNextOffset(page.offset)
     } catch (err) {
       const msg = 'Error cargando bocanas'
       setError(msg)
       toast.error(msg)
-      console.error(err)
+      logger.error(err)
     } finally {
       setLoading(false)
     }
@@ -59,30 +57,12 @@ export const useBocanas = (filters?: UseBocanasFilters) => {
     try {
       setLoadingMore(true)
       const page = await bocanasApi.getPage(filters, nextOffset)
-      try { console.debug('useBocanas.loadMore fetched size:', page.records?.length, 'newOffset:', page.offset) } catch {}
-      let newRecords = page.records || []
-      if (filters?.jugadorNombre || filters?.jugadorId) {
-        const targetName = (filters?.jugadorNombre || '').toLowerCase()
-        const targetRec = filters?.jugadorId || ''
-        try { console.debug('useBocanas.loadMore applying local filters:', { targetName, targetRec }) } catch {}
-        newRecords = newRecords.filter(r => {
-          const f: Record<string, any> = r.fields as any
-          const values = Object.values(f)
-          const nameHit = targetName
-            ? values.some(v => typeof v === 'string' && v.toLowerCase().includes(targetName))
-            : false
-          const idHit = targetRec
-            ? values.some(v => Array.isArray(v) ? v.includes(targetRec) : (typeof v === 'string' && v.includes(targetRec)))
-            : false
-          return (targetName ? nameHit : false) || (targetRec ? idHit : false)
-        })
-        try { console.debug('useBocanas.loadMore after local filter size:', newRecords.length) } catch {}
-      }
+      const newRecords = (page.records || []).filter(r => matchesJugador(r, filters))
       setBocanas(prev => [...prev, ...newRecords])
       setNextOffset(page.offset)
     } catch (err) {
       toast.error('Error cargando más bocanas')
-      console.error(err)
+      logger.error(err)
     } finally {
       setLoadingMore(false)
     }

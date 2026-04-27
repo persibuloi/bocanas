@@ -38,8 +38,9 @@ interface AdvancedFiltersProps {
   apostadores: Array<{ id: string; fields: { Nombre: string } }>;
 }
 
+import { TORNEOS as torneos } from '../lib/torneos';
+
 const statuses = ['Pendiente', 'Pagada'] as const;
-const torneos = ['X Empresarial', 'XI Empresarial', 'XII Empresarial'] as const;
 const comidas = ['Boneless', 'Pizza', 'Churrasco Bocas', 'Paninni Churrasco', 'Quesadilla'] as const;
 
 const AdvancedFilters: React.FC<AdvancedFiltersProps> = ({

@@ -5,9 +5,9 @@ import { bocanasApi } from '../lib/airtable'; // Usamos el servicio refactorizad
 import { ArrowLeft, PlusCircle, User, Trophy, Calendar, Utensils, CheckCircle2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner'; // Asumo que se usa sonner o similar, si no, usaré alert o fallback
 import { BocanaCreateSchema } from '../schemas';
+import { TORNEOS as torneos } from '../lib/torneos';
 
 const tipos = ['Promedio', 'Canal', 'Strike', 'Menor a 140', 'Menor a 100'] as const;
-const torneos = ['X Empresarial', 'XI Empresarial', 'XII Empresarial'] as const;
 const comidasSugeridas = ['Boneless', 'Pizza', 'Churrasco Bocas', 'Paninni Churrasco', 'Quesadilla', 'Tajadas Con queso'];
 
 const NuevaBocana: React.FC = () => {
