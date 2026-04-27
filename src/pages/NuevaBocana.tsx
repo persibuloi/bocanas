@@ -22,8 +22,10 @@ import { TORNEOS, Torneo } from '../lib/torneos'
 const TIPOS = ['Promedio', 'Canal', 'Strike', 'Menor a 140', 'Menor a 100'] as const
 type Tipo = (typeof TIPOS)[number]
 
-const initials = (name: string): string => {
-  const parts = (name || '').trim().split(/\s+/).slice(0, 2)
+const initials = (name: unknown): string => {
+  const raw = Array.isArray(name) ? name[0] : name
+  const str = typeof raw === 'string' ? raw : String(raw ?? '')
+  const parts = str.trim().split(/\s+/).slice(0, 2)
   return parts.map(p => p[0]?.toUpperCase() || '').join('') || '?'
 }
 
