@@ -1,11 +1,8 @@
 import React, { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard,
   PlusCircle,
   Users,
-  History,
-  TrendingUp,
   Menu,
   X,
   Utensils,
@@ -18,18 +15,6 @@ const Navbar: React.FC = () => {
   const location = useLocation();
 
   const navItems = [
-    {
-      path: '/',
-      icon: LayoutDashboard,
-      label: 'Dashboard',
-      description: 'Vista general'
-    },
-    {
-      path: '/nueva-apuesta',
-      icon: PlusCircle,
-      label: 'Nueva Apuesta',
-      description: 'Registrar apuesta'
-    },
     {
       path: '/bocanas-dashboard',
       icon: BarChart2,
@@ -49,22 +34,10 @@ const Navbar: React.FC = () => {
       description: 'Registrar penalidad'
     },
     {
-      path: '/apostadores',
-      icon: Users,
-      label: 'Apostadores',
-      description: 'Gestionar usuarios'
-    },
-    {
-      path: '/historial',
-      icon: History,
-      label: 'Historial',
-      description: 'Ver todas las apuestas'
-    },
-    {
-      path: '/estadisticas',
-      icon: TrendingUp,
-      label: 'Estadísticas',
-      description: 'Análisis y reportes'
+      path: '/nueva-apuesta',
+      icon: PlusCircle,
+      label: 'Nueva Apuesta',
+      description: 'Registrar apuesta'
     }
   ];
 
