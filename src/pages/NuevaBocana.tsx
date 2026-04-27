@@ -1,389 +1,463 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useApostadores } from '../hooks/useApostadores';
-import { bocanasApi } from '../lib/airtable'; // Usamos el servicio refactorizado
-import { ArrowLeft, PlusCircle, User, Trophy, Calendar, Utensils, CheckCircle2, Loader2 } from 'lucide-react';
-import { toast } from 'sonner'; // Asumo que se usa sonner o similar, si no, usaré alert o fallback
-import { BocanaCreateSchema } from '../schemas';
-import { TORNEOS as torneos } from '../lib/torneos';
+import React, { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import {
+  ArrowLeft,
+  Calendar,
+  CheckCircle2,
+  Loader2,
+  PlusCircle,
+  Search,
+  Target,
+  Trophy,
+  User,
+  Utensils,
+  X,
+} from 'lucide-react'
+import toast from 'react-hot-toast'
+import { useApostadores } from '../hooks/useApostadores'
+import { useComidaOptions } from '../hooks/useComidaOptions'
+import { bocanasApi } from '../lib/airtable'
+import { TORNEOS, Torneo } from '../lib/torneos'
 
-const tipos = ['Promedio', 'Canal', 'Strike', 'Menor a 140', 'Menor a 100'] as const;
-const comidasSugeridas = ['Boneless', 'Pizza', 'Churrasco Bocas', 'Paninni Churrasco', 'Quesadilla', 'Tajadas Con queso'];
+const TIPOS = ['Promedio', 'Canal', 'Strike', 'Menor a 140', 'Menor a 100'] as const
+type Tipo = (typeof TIPOS)[number]
+
+const initials = (name: string): string => {
+  const parts = (name || '').trim().split(/\s+/).slice(0, 2)
+  return parts.map(p => p[0]?.toUpperCase() || '').join('') || '?'
+}
+
+const Section: React.FC<{
+  step: number
+  title: string
+  hint?: string
+  children: React.ReactNode
+}> = ({ step, title, hint, children }) => (
+  <section className="rounded-2xl bg-white p-5 ring-1 ring-gray-100">
+    <header className="mb-4 flex items-center gap-3">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+        {step}
+      </span>
+      <div className="min-w-0">
+        <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+        {hint && <p className="text-[11px] text-gray-500">{hint}</p>}
+      </div>
+    </header>
+    {children}
+  </section>
+)
+
+const Chip: React.FC<{
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+  error?: boolean
+}> = ({ active, onClick, children, error }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className={`rounded-full border px-3.5 py-2 text-sm font-medium transition-colors ${
+      active
+        ? 'border-primary bg-primary text-white shadow-sm shadow-primary/25'
+        : error
+          ? 'border-red-200 bg-red-50 text-red-700'
+          : 'border-gray-200 bg-white text-gray-700 active:bg-gray-50'
+    }`}
+  >
+    {children}
+  </button>
+)
 
 const NuevaBocana: React.FC = () => {
-  const navigate = useNavigate();
-  const { apostadores, loading: loadingJugadores, fetchApostadores } = useApostadores();
+  const navigate = useNavigate()
+  const { apostadores, loading: loadingJugadores } = useApostadores()
+  const { comidas } = useComidaOptions()
 
-  const [form, setForm] = useState({
-    jugador_id: '',
-    torneo: '',
-    jornada: '',
-    tipo: '',
-    status: 'Pendiente' as 'Pendiente' | 'Pagada',
-    comida: ''
-  });
-  
-  const [customComida, setCustomComida] = useState('');
-  const [isCustomComida, setIsCustomComida] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors] = useState<{ [k: string]: string }>({});
-  const [jugadorQuery, setJugadorQuery] = useState('');
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [jugadorId, setJugadorId] = useState('')
+  const [jugadorQuery, setJugadorQuery] = useState('')
+  const [showSuggestions, setShowSuggestions] = useState(false)
 
-  // Cargar apostadores al inicio
+  const [torneo, setTorneo] = useState<Torneo | ''>('')
+  const [jornada, setJornada] = useState<string>('')
+  const [tipo, setTipo] = useState<Tipo | ''>('')
+  const [status, setStatus] = useState<'Pendiente' | 'Pagada'>('Pendiente')
+  const [comida, setComida] = useState('')
+  const [customComida, setCustomComida] = useState('')
+  const [usingCustom, setUsingCustom] = useState(false)
+
+  const [submitting, setSubmitting] = useState(false)
+  const [errors, setErrors] = useState<Partial<Record<'jugador' | 'torneo' | 'jornada' | 'tipo' | 'comida', string>>>({})
+
+  // Cargar últimos valores usados
   useEffect(() => {
-    fetchApostadores();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const j = localStorage.getItem('ultima_jornada_bocana') || ''
+    const t = localStorage.getItem('ultimo_torneo_bocana') as Torneo | null
+    const tp = localStorage.getItem('ultimo_tipo_bocana') as Tipo | null
+    if (j) setJornada(j)
+    if (t && (TORNEOS as readonly string[]).includes(t)) setTorneo(t)
+    if (tp && (TIPOS as readonly string[]).includes(tp)) setTipo(tp)
+  }, [])
 
-  // Persistencia de preferencias (localStorage)
-  useEffect(() => {
-    const j = localStorage.getItem('ultima_jornada_bocana');
-    const t = localStorage.getItem('ultimo_torneo_bocana');
-    const tp = localStorage.getItem('ultimo_tipo_bocana');
-    
-    setForm(prev => ({
-      ...prev,
-      jornada: j || prev.jornada,
-      torneo: t || prev.torneo,
-      tipo: tp || prev.tipo
-    }));
-  }, []);
+  const filteredJugadores = useMemo(() => {
+    const q = jugadorQuery.trim().toLowerCase()
+    if (!q) return apostadores.slice(0, 8)
+    return apostadores.filter(a => a.fields.Nombre.toLowerCase().includes(q)).slice(0, 8)
+  }, [apostadores, jugadorQuery])
 
-  // Autocomplete logic
-  const filteredApostadores = useMemo(() => {
-    const q = jugadorQuery.trim().toLowerCase();
-    if (!q) return apostadores.slice(0, 8);
-    return apostadores.filter(a => a.fields.Nombre.toLowerCase().includes(q)).slice(0, 8);
-  }, [apostadores, jugadorQuery]);
+  const selectedJugador = apostadores.find(a => a.id === jugadorId)
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
-    setErrors(prev => ({ ...prev, [name]: '' }));
-
-    // Persistencia
-    if (name === 'jornada') localStorage.setItem('ultima_jornada_bocana', value);
-    if (name === 'torneo') localStorage.setItem('ultimo_torneo_bocana', value);
-    if (name === 'tipo') localStorage.setItem('ultimo_tipo_bocana', value);
-  };
-
-  const validate = () => {
-    const e: { [k: string]: string } = {};
-    
-    try {
-      // Validación parcial con Zod para lo básico
-      if (!form.jugador_id) e.jugador_id = 'Selecciona un jugador válido';
-      
-      const jornadaNum = Number(form.jornada);
-      if (!form.jornada || isNaN(jornadaNum) || jornadaNum < 1) {
-        e.jornada = 'La jornada debe ser un número válido (mínimo 1)';
-      }
-
-      if (!form.torneo) e.torneo = 'Requerido';
-      if (!form.tipo) e.tipo = 'Requerido';
-
-      if (form.status === 'Pagada') {
-        const comidaFinal = isCustomComida ? customComida : form.comida;
-        if (!comidaFinal.trim()) {
-          e.comida = 'Si está pagada, debes especificar qué comida fue';
-        }
-      }
-    } catch (err) {
-      console.error("Error validando", err);
+  const validate = (): boolean => {
+    const next: typeof errors = {}
+    if (!jugadorId) next.jugador = 'Seleccioná un jugador'
+    if (!torneo) next.torneo = 'Requerido'
+    const jn = Number(jornada)
+    if (!jornada || Number.isNaN(jn) || jn < 1) next.jornada = 'Mínimo 1'
+    if (!tipo) next.tipo = 'Requerido'
+    if (status === 'Pagada') {
+      const c = (usingCustom ? customComida : comida).trim()
+      if (!c) next.comida = 'Si está pagada, indicá la comida'
     }
-
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
+    setErrors(next)
+    return Object.keys(next).length === 0
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validate()) return;
+    e.preventDefault()
+    if (!validate() || !torneo || !tipo) return
 
-    setSubmitting(true);
+    setSubmitting(true)
     try {
-      const comidaFinal = form.status === 'Pagada' 
-        ? (isCustomComida ? customComida : form.comida) 
-        : undefined;
-
+      const comidaFinal =
+        status === 'Pagada' ? (usingCustom ? customComida.trim() : comida.trim()) : undefined
       const created = await bocanasApi.create({
-        Jugador_ID: form.jugador_id,
-        Torneo: form.torneo as any,
-        Jornada: Number(form.jornada),
-        Tipo: form.tipo as any,
-        Status: form.status,
-        Comida: comidaFinal
-      });
+        Jugador_ID: jugadorId,
+        Torneo: torneo,
+        Jornada: Number(jornada),
+        Tipo: tipo,
+        Status: status,
+        Comida: comidaFinal,
+      })
 
-      // Verificar si se guardó la comida (si no, es porque Airtable la rechazó y entró el fallback)
+      // Persistir últimos valores
+      localStorage.setItem('ultima_jornada_bocana', jornada)
+      localStorage.setItem('ultimo_torneo_bocana', torneo)
+      localStorage.setItem('ultimo_tipo_bocana', tipo)
+
       if (comidaFinal && !created.fields.Comida) {
-        toast.warning('Bocana registrada, pero el plato NO se guardó. Verifica que el campo "Comida" en Airtable sea tipo Texto.', { duration: 6000 });
+        toast('Bocana creada, pero la comida no se guardó (verificá Airtable)', {
+          icon: '⚠️',
+          duration: 5000,
+        })
       } else {
-        toast.success('Bocana registrada correctamente');
+        toast.success('Bocana registrada')
       }
-
-      navigate('/bocanas');
-    } catch (error) {
-      console.error('Error creando bocana:', error);
-      setErrors(prev => ({ ...prev, submit: 'Error al guardar. Intenta de nuevo.' }));
+      navigate('/bocanas')
+    } catch {
+      toast.error('Error al guardar')
     } finally {
-      setSubmitting(false);
+      setSubmitting(false)
     }
-  };
+  }
+
+  const selectJugador = (id: string, name: string) => {
+    setJugadorId(id)
+    setJugadorQuery(name)
+    setShowSuggestions(false)
+    setErrors(prev => ({ ...prev, jugador: undefined }))
+  }
+
+  const clearJugador = () => {
+    setJugadorId('')
+    setJugadorQuery('')
+    setShowSuggestions(true)
+  }
+
+  const isValid =
+    !!jugadorId &&
+    !!torneo &&
+    !!tipo &&
+    !!jornada &&
+    Number(jornada) >= 1 &&
+    (status === 'Pendiente' || (usingCustom ? !!customComida.trim() : !!comida))
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <button 
-          onClick={() => navigate(-1)} 
-          className="group inline-flex items-center text-gray-500 hover:text-gray-900 mb-6 transition-colors"
-        >
-          <ArrowLeft size={18} className="mr-2 group-hover:-translate-x-1 transition-transform" /> 
-          Volver al listado
-        </button>
-        
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 tracking-tight mb-2">Nueva Bocana</h1>
-            <p className="text-gray-500">Registra una nueva penalidad para un jugador.</p>
-          </div>
-          <div className="hidden md:flex w-12 h-12 bg-primary/10 rounded-2xl items-center justify-center text-primary">
-            <PlusCircle size={24} />
+    <div className="min-h-screen bg-gray-50">
+      <header className="sticky top-0 z-20 bg-gray-50/85 backdrop-blur-md">
+        <div className="px-4 pb-3 pt-4 sm:px-6 lg:px-10 lg:pt-8">
+          <button
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-gray-500 active:bg-gray-100"
+          >
+            <ArrowLeft size={14} />
+            Volver
+          </button>
+          <div className="mt-1 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                Registro
+              </p>
+              <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
+                Nueva bocana
+              </h1>
+            </div>
+            <div className="hidden h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary sm:flex">
+              <PlusCircle size={20} />
+            </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Card Principal */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-6 md:p-8 space-y-8">
-            
-            {/* Selección de Jugador */}
-            <div className="space-y-4">
-              <label className="block text-sm font-semibold text-gray-700">
-                Jugador <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <User size={18} className="text-gray-400" />
-                </div>
-                <input
-                  type="text"
-                  value={jugadorQuery}
-                  onChange={(e) => {
-                    setJugadorQuery(e.target.value);
-                    setShowSuggestions(true);
-                    setForm(prev => ({ ...prev, jugador_id: '' }));
-                  }}
-                  onFocus={() => setShowSuggestions(true)}
-                  placeholder={loadingJugadores ? 'Cargando lista...' : 'Buscar jugador por nombre...'}
-                  className={`w-full pl-11 pr-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all ${errors.jugador_id ? 'border-red-300 bg-red-50' : 'border-gray-200'}`}
-                />
-                
-                {/* Sugerencias */}
-                {showSuggestions && jugadorQuery && (
-                  <div className="absolute z-20 mt-2 w-full bg-white border border-gray-100 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-                    {filteredApostadores.length > 0 ? (
-                      filteredApostadores.map(a => (
-                        <button
-                          key={a.id}
-                          type="button"
-                          onClick={() => {
-                            setForm(prev => ({ ...prev, jugador_id: a.id }));
-                            setJugadorQuery(a.fields.Nombre);
-                            setShowSuggestions(false);
-                            localStorage.setItem('ultimo_jugador_bocana', a.id);
-                          }}
-                          className="w-full text-left px-4 py-3 hover:bg-gray-50 flex items-center space-x-3 transition-colors"
-                        >
-                          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold">
-                            {a.fields.Nombre.substring(0, 2).toUpperCase()}
-                          </div>
-                          <span className="text-gray-700 font-medium">{a.fields.Nombre}</span>
-                        </button>
-                      ))
-                    ) : (
-                      <div className="px-4 py-3 text-sm text-gray-400 text-center">
-                        No se encontraron jugadores
-                      </div>
-                    )}
-                  </div>
-                )}
+      <form onSubmit={handleSubmit} className="space-y-3 px-4 pb-32 pt-2 sm:px-6 lg:px-10">
+        <Section step={1} title="Jugador" hint="Buscá por nombre o seleccioná de la lista">
+          {selectedJugador ? (
+            <div className="flex items-center gap-3 rounded-xl border-2 border-primary/20 bg-primary/5 p-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-primary to-emerald-600 text-sm font-bold text-white">
+                {initials(selectedJugador.fields.Nombre)}
               </div>
-              {errors.jugador_id && <p className="text-sm text-red-500 mt-1">{errors.jugador_id}</p>}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-gray-900">
+                  {selectedJugador.fields.Nombre}
+                </p>
+                <p className="text-[11px] text-gray-500">Jugador seleccionado</p>
+              </div>
+              <button
+                type="button"
+                onClick={clearJugador}
+                className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-gray-600 ring-1 ring-gray-200 active:bg-gray-50"
+                aria-label="Cambiar"
+              >
+                <X size={16} />
+              </button>
             </div>
+          ) : (
+            <div className="relative">
+              <Search
+                size={16}
+                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                type="text"
+                value={jugadorQuery}
+                onChange={e => {
+                  setJugadorQuery(e.target.value)
+                  setShowSuggestions(true)
+                  setJugadorId('')
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                placeholder={loadingJugadores ? 'Cargando jugadores…' : 'Buscar jugador…'}
+                className={`h-12 w-full rounded-xl bg-white pl-10 pr-4 text-base outline-none ring-1 transition-colors placeholder:text-gray-400 ${
+                  errors.jugador ? 'ring-red-300 focus:ring-red-400' : 'ring-gray-200 focus:ring-primary'
+                }`}
+              />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Torneo */}
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
-                  <Trophy size={16} className="text-gray-400" /> Torneo <span className="text-red-500">*</span>
-                </label>
-                <select
-                  name="torneo"
-                  value={form.torneo}
-                  onChange={handleInputChange}
-                  className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all ${errors.torneo ? 'border-red-300' : 'border-gray-200'}`}
-                >
-                  <option value="">Seleccionar...</option>
-                  {torneos.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-                {errors.torneo && <p className="text-sm text-red-500">{errors.torneo}</p>}
-              </div>
-
-              {/* Jornada */}
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700 flex items-center gap-2">
-                  <Calendar size={16} className="text-gray-400" /> Jornada <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  name="jornada"
-                  min="1"
-                  value={form.jornada}
-                  onChange={handleInputChange}
-                  placeholder="Ej. 5"
-                  className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all ${errors.jornada ? 'border-red-300' : 'border-gray-200'}`}
-                />
-                {errors.jornada && <p className="text-sm text-red-500">{errors.jornada}</p>}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Tipo de Bocana */}
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">
-                  Tipo de Penalidad <span className="text-red-500">*</span>
-                </label>
-                <select
-                  name="tipo"
-                  value={form.tipo}
-                  onChange={handleInputChange}
-                  className={`w-full px-4 py-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all ${errors.tipo ? 'border-red-300' : 'border-gray-200'}`}
-                >
-                  <option value="">Seleccionar tipo...</option>
-                  {tipos.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-                {errors.tipo && <p className="text-sm text-red-500">{errors.tipo}</p>}
-              </div>
-
-              {/* Estado */}
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">
-                  Estado Inicial
-                </label>
-                <div className="flex p-1 bg-gray-100 rounded-xl">
-                  {['Pendiente', 'Pagada'].map((statusOption) => (
-                    <button
-                      key={statusOption}
-                      type="button"
-                      onClick={() => setForm(prev => ({ ...prev, status: statusOption as any }))}
-                      className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
-                        form.status === statusOption
-                          ? 'bg-white text-gray-900 shadow-sm'
-                          : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      {statusOption}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Selección de Comida (Solo si es Pagada) */}
-            {form.status === 'Pagada' && (
-              <div className="p-5 bg-green-50 rounded-xl border border-green-100 animate-in slide-in-from-top-2 duration-300">
-                <div className="flex items-center gap-2 mb-4 text-green-800">
-                  <Utensils size={18} />
-                  <span className="font-semibold">Registro de Pago</span>
-                </div>
-                
-                <div className="space-y-3">
-                  <label className="block text-sm text-green-700 font-medium">
-                    ¿Qué comida pagó el jugador?
-                  </label>
-                  
-                  {!isCustomComida ? (
-                    <select
-                      name="comida"
-                      value={form.comida}
-                      onChange={(e) => {
-                        if (e.target.value === 'OTRO') {
-                          setIsCustomComida(true);
-                          setForm(prev => ({ ...prev, comida: '' }));
-                        } else {
-                          setForm(prev => ({ ...prev, comida: e.target.value }));
-                        }
-                      }}
-                      className="w-full px-4 py-3 bg-white border border-green-200 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
-                    >
-                      <option value="">-- Seleccionar Comida --</option>
-                      {comidasSugeridas.map(c => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                      <option value="OTRO">✨ Otra comida distinta...</option>
-                    </select>
-                  ) : (
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={customComida}
-                        onChange={(e) => setCustomComida(e.target.value)}
-                        placeholder="Escribe el nombre de la comida..."
-                        autoFocus
-                        className="w-full px-4 py-3 bg-white border border-green-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none"
-                      />
+              {showSuggestions && filteredJugadores.length > 0 && (
+                <ul className="absolute z-30 mt-2 max-h-72 w-full overflow-y-auto rounded-xl bg-white p-1 shadow-xl ring-1 ring-gray-100">
+                  {filteredJugadores.map(a => (
+                    <li key={a.id}>
                       <button
                         type="button"
-                        onClick={() => setIsCustomComida(false)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600 underline"
+                        onClick={() => selectJugador(a.id, a.fields.Nombre)}
+                        className="flex w-full items-center gap-3 rounded-lg p-2.5 text-left active:bg-gray-50"
                       >
-                        Cancelar
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-gray-100 to-gray-200 text-xs font-bold text-gray-600">
+                          {initials(a.fields.Nombre)}
+                        </div>
+                        <span className="text-sm font-medium text-gray-900">{a.fields.Nombre}</span>
                       </button>
-                    </div>
-                  )}
-                  
-                  {errors.comida && <p className="text-sm text-red-500">{errors.comida}</p>}
-                </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+          {errors.jugador && <p className="mt-2 text-xs text-red-600">{errors.jugador}</p>}
+        </Section>
+
+        <Section step={2} title="Torneo y jornada">
+          <div className="space-y-4">
+            <div>
+              <label className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                <Trophy size={12} /> Torneo
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {TORNEOS.map(t => (
+                  <Chip
+                    key={t}
+                    active={torneo === t}
+                    error={!!errors.torneo && torneo !== t}
+                    onClick={() => {
+                      setTorneo(t)
+                      setErrors(prev => ({ ...prev, torneo: undefined }))
+                    }}
+                  >
+                    {t}
+                  </Chip>
+                ))}
               </div>
-            )}
+              {errors.torneo && <p className="mt-2 text-xs text-red-600">{errors.torneo}</p>}
+            </div>
+
+            <div>
+              <label className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                <Calendar size={12} /> Jornada
+              </label>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                value={jornada}
+                onChange={e => {
+                  setJornada(e.target.value)
+                  setErrors(prev => ({ ...prev, jornada: undefined }))
+                }}
+                placeholder="Ej. 5"
+                className={`h-12 w-full rounded-xl bg-white px-4 text-base outline-none ring-1 transition-colors ${
+                  errors.jornada ? 'ring-red-300 focus:ring-red-400' : 'ring-gray-200 focus:ring-primary'
+                }`}
+              />
+              {errors.jornada && <p className="mt-2 text-xs text-red-600">{errors.jornada}</p>}
+            </div>
+          </div>
+        </Section>
+
+        <Section step={3} title="Tipo de penalidad">
+          <div className="flex flex-wrap gap-2">
+            {TIPOS.map(t => (
+              <Chip
+                key={t}
+                active={tipo === t}
+                error={!!errors.tipo && tipo !== t}
+                onClick={() => {
+                  setTipo(t)
+                  setErrors(prev => ({ ...prev, tipo: undefined }))
+                }}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Target size={12} />
+                  {t}
+                </span>
+              </Chip>
+            ))}
+          </div>
+          {errors.tipo && <p className="mt-2 text-xs text-red-600">{errors.tipo}</p>}
+        </Section>
+
+        <Section step={4} title="Estado" hint="Si está pagada, indicá qué comida fue">
+          <div className="grid grid-cols-2 gap-2 rounded-xl bg-gray-100 p-1">
+            {(['Pendiente', 'Pagada'] as const).map(s => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setStatus(s)}
+                className={`rounded-lg py-2.5 text-sm font-semibold transition-all ${
+                  status === s
+                    ? s === 'Pagada'
+                      ? 'bg-emerald-500 text-white shadow-sm'
+                      : 'bg-amber-500 text-white shadow-sm'
+                    : 'text-gray-600 active:text-gray-900'
+                }`}
+              >
+                {s}
+              </button>
+            ))}
           </div>
 
-          {/* Footer Actions */}
-          <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => navigate(-1)}
-              className="px-6 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-xl transition-colors"
-              disabled={submitting}
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-6 py-2.5 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 shadow-lg shadow-primary/20 disabled:opacity-50 disabled:shadow-none transition-all flex items-center"
-            >
-              {submitting ? (
+          {status === 'Pagada' && (
+            <div className="mt-4 space-y-3 rounded-xl bg-emerald-50/60 p-3 ring-1 ring-emerald-100">
+              <div className="flex items-center gap-2 text-emerald-800">
+                <Utensils size={14} />
+                <span className="text-xs font-semibold uppercase tracking-wide">Comida pagada</span>
+              </div>
+
+              {!usingCustom ? (
                 <>
-                  <Loader2 size={18} className="mr-2 animate-spin" />
-                  Guardando...
+                  <div className="flex flex-wrap gap-2">
+                    {comidas.map(c => (
+                      <Chip
+                        key={c}
+                        active={comida === c}
+                        onClick={() => {
+                          setComida(c)
+                          setErrors(prev => ({ ...prev, comida: undefined }))
+                        }}
+                      >
+                        {c}
+                      </Chip>
+                    ))}
+                    <Chip
+                      active={false}
+                      onClick={() => {
+                        setUsingCustom(true)
+                        setComida('')
+                      }}
+                    >
+                      ✨ Otra
+                    </Chip>
+                  </div>
                 </>
               ) : (
-                <>
-                  Registrar Bocana
-                  <CheckCircle2 size={18} className="ml-2" />
-                </>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={customComida}
+                    onChange={e => {
+                      setCustomComida(e.target.value)
+                      setErrors(prev => ({ ...prev, comida: undefined }))
+                    }}
+                    autoFocus
+                    placeholder="Escribí el nombre…"
+                    className="h-11 flex-1 rounded-xl bg-white px-4 text-sm outline-none ring-1 ring-emerald-200 focus:ring-primary"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUsingCustom(false)
+                      setCustomComida('')
+                    }}
+                    className="rounded-xl bg-white px-3 text-xs font-medium text-gray-600 ring-1 ring-gray-200 active:bg-gray-50"
+                  >
+                    Cancelar
+                  </button>
+                </div>
               )}
-            </button>
-          </div>
-        </div>
+              {errors.comida && <p className="text-xs text-red-600">{errors.comida}</p>}
+            </div>
+          )}
+        </Section>
       </form>
-    </div>
-  );
-};
 
-export default NuevaBocana;
+      <div className="fixed inset-x-0 bottom-[64px] z-30 border-t border-gray-100 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:bottom-0 lg:left-72">
+        <div className="mx-auto flex max-w-2xl items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            disabled={submitting}
+            className="rounded-xl px-4 py-3 text-sm font-medium text-gray-600 active:bg-gray-100 disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            onClick={handleSubmit}
+            disabled={submitting || !isValid}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-base font-semibold text-white shadow-lg shadow-primary/30 transition-colors active:bg-emerald-700 disabled:bg-gray-300 disabled:shadow-none"
+          >
+            {submitting ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                Guardando…
+              </>
+            ) : (
+              <>
+                <CheckCircle2 size={18} />
+                Registrar bocana
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default NuevaBocana
