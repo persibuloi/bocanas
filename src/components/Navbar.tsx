@@ -32,12 +32,6 @@ const Navbar: React.FC = () => {
       icon: PlusCircle,
       label: 'Nueva Bocana',
       description: 'Registrar penalidad'
-    },
-    {
-      path: '/nueva-apuesta',
-      icon: PlusCircle,
-      label: 'Nueva Apuesta',
-      description: 'Registrar apuesta'
     }
   ];
 

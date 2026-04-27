@@ -17,34 +17,15 @@ export interface Bocana {
 }
 
 export interface Apostador {
-  id: string;
+  id: string
   fields: {
-    Nombre: string;
-    Email?: string;
-    Telefono?: string;
-    Activo: boolean;
-    Fecha_Registro: string;
-    Total_Apostado: number;
-    Total_Ganado: number;
-    Balance: number;
-  };
-}
-
-export interface Apuesta {
-  id: string;
-  fields: {
-    Apostador_ID: string;
-    Apostador_Nombre?: string;
-    Torneo: string;
-    Tipo_Apuesta: string;
-    Descripcion?: string;
-    Monto: number;
-    Odds: number;
-    Resultado_Esperado?: string;
-    Estado: 'Pendiente' | 'Ganada' | 'Perdida';
-    Fecha_Creacion: string;
-    Fecha_Resolucion?: string;
-    Ganancia_Potencial: number;
-    Ganancia_Real: number;
-  };
+    Nombre: string
+    Email?: string
+    Telefono?: string
+    Activo: boolean
+    Fecha_Registro: string
+    Total_Apostado: number
+    Total_Ganado: number
+    Balance: number
+  }
 }
