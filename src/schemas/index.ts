@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { TORNEOS } from '../lib/torneos';
 
 // Zod para Bocanas
 export const BocanaCreateSchema = z.object({
@@ -6,7 +7,7 @@ export const BocanaCreateSchema = z.object({
   Jornada: z.number().int().nonnegative(),
   Tipo: z.enum(['Promedio', 'Canal', 'Strike', 'Menor a 140', 'Menor a 100']),
   Status: z.enum(['Pagada', 'Pendiente']).default('Pendiente'),
-  Torneo: z.enum(['X Empresarial', 'XI Empresarial', 'XII Empresarial']),
+  Torneo: z.enum(TORNEOS),
   Comida: z.string().optional(),
 })
 
@@ -16,7 +17,7 @@ export const BocanaUpdateSchema = z.object({
   Jornada: z.number().int().nonnegative().optional(),
   Tipo: z.enum(['Promedio', 'Canal', 'Strike', 'Menor a 140', 'Menor a 100']).optional(),
   Status: z.enum(['Pagada', 'Pendiente']).optional(),
-  Torneo: z.enum(['X Empresarial', 'XI Empresarial', 'XII Empresarial']).optional(),
+  Torneo: z.enum(TORNEOS).optional(),
   Comida: z.string().optional(),
 }).partial()
 

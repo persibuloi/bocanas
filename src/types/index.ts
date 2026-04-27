@@ -1,3 +1,5 @@
+import { Torneo } from '../lib/torneos'
+
 export interface Bocana {
   id: string
   fields: {
@@ -6,7 +8,7 @@ export interface Bocana {
     Jornada: number
     Tipo: 'Promedio' | 'Canal' | 'Strike' | 'Menor a 140' | 'Menor a 100'
     Status: 'Pagada' | 'Pendiente'
-    Torneo: 'X Empresarial' | 'XI Empresarial' | 'XII Empresarial'
+    Torneo: Torneo
     Comida?: string
     Ide?: number
     creacion?: string

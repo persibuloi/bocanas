@@ -13,9 +13,9 @@ import AdvancedFilters from '../components/AdvancedFilters'
 import BocanaCard from '../components/BocanaCard'
 import MobileBocanaCard from '../components/MobileBocanaCard'
 import { Bocana } from '../lib/airtable'
+import { TORNEOS as torneos } from '../lib/torneos'
 
 const statuses = ['Pendiente', 'Pagada'] as const
-const torneos = ['X Empresarial', 'XI Empresarial', 'XII Empresarial'] as const
 // Las comidas ahora se obtienen dinámicamente de Airtable
 
 const Bocanas: React.FC = () => {

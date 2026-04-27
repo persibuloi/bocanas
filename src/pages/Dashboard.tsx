@@ -70,21 +70,21 @@ const Dashboard: React.FC = () => {
       value: estadisticas?.total_apuestas || 0,
       icon: BarChart3,
       color: 'bg-gradient-to-r from-blue-500 to-blue-600',
-      change: null
+      change: null as string | null
     },
     {
       title: 'Apostadores Activos',
       value: estadisticas?.apostadores_activos || 0,
       icon: Users,
       color: 'bg-gradient-to-r from-green-500 to-green-600',
-      change: null
+      change: null as string | null
     },
     {
       title: 'Monto Total Apostado',
       value: formatMoney(estadisticas?.monto_total_apostado || 0),
       icon: DollarSign,
       color: 'bg-gradient-to-r from-purple-500 to-purple-600',
-      change: null
+      change: null as string | null
     },
     {
       title: 'Ganancia Total',

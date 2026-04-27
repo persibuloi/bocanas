@@ -1,327 +1,190 @@
-import { api, fetchAllWithPagination } from './api';
-import { Bocana } from '../types';
-import { BocanaCreateSchema, BocanaUpdateSchema } from '../schemas';
-import { apostadoresApi } from './betting';
+import { api, fetchAllWithPagination } from './api'
+import { Bocana } from '../types'
+import { BocanaCreateSchema, BocanaUpdateSchema } from '../schemas'
+import { Torneo } from '../lib/torneos'
+import { and, eqNumber, eqString } from '../lib/airtable-formula'
+import { logger } from '../lib/logger'
 
-// API para Bocanas
+export interface BocanaFilters {
+  status?: 'Pagada' | 'Pendiente'
+  torneo?: Torneo
+  jugadorId?: string
+  jugadorNombre?: string
+  jornada?: number
+}
+
+const buildServerConds = (filters?: BocanaFilters): string[] => {
+  const conds: string[] = []
+  if (!filters) return conds
+  if (filters.status) conds.push(eqString('Status', filters.status))
+  if (filters.torneo) conds.push(eqString('Torneo', filters.torneo))
+  if (typeof filters.jornada === 'number') conds.push(eqNumber('Jornada', filters.jornada))
+  return conds
+}
+
+const matchesJugador = (record: Bocana, filters?: BocanaFilters): boolean => {
+  if (!filters?.jugadorId && !filters?.jugadorNombre) return true
+  const fields = (record.fields ?? {}) as Record<string, unknown>
+  const targetName = (filters.jugadorNombre || '').toLowerCase()
+  const targetId = filters.jugadorId || ''
+  const values = Object.values(fields)
+  const nameHit = targetName
+    ? values.some(v => typeof v === 'string' && v.toLowerCase().includes(targetName))
+    : false
+  const idHit = targetId
+    ? values.some(v =>
+        Array.isArray(v) ? v.includes(targetId) : typeof v === 'string' && v.includes(targetId)
+      )
+    : false
+  return (targetName ? nameHit : false) || (targetId ? idHit : false)
+}
+
+// Candidatos de campo Jugador para create/update. Airtable puede haber sido
+// creado con distintos nombres; probamos en orden y cacheamos el ganador.
+const JUGADOR_LINK_FIELDS = ['Jugador_ID', 'Jugador', 'Apostador', 'Apostador_ID'] as const
+let resolvedJugadorField: string | null = null
+
 export const bocanasApi = {
-  // Obtener todas las bocanas con filtros
-  getAll: async (filters?: { status?: 'Pagada' | 'Pendiente'; torneo?: 'X Empresarial' | 'XI Empresarial' | 'XII Empresarial'; jugadorId?: string; jugadorNombre?: string; jornada?: number }): Promise<Bocana[]> => {
+  getAll: async (filters?: BocanaFilters): Promise<Bocana[]> => {
     try {
-      const params: Record<string, any> = {
-        // evitar ordenar por un campo que podría variar de nombre en Airtable (Creación/creacion)
-        // 'sort[0][field]': 'Creación',
-        // 'sort[0][direction]': 'desc',
-        pageSize: 50,
-      }
-      const commonConds: string[] = []
-      let jugadorVariants: string[] = []
-      if (filters) {
-        if (filters.status) commonConds.push(`{Status} = '${filters.status}'`)
-        if (filters.torneo) commonConds.push(`{Torneo} = '${filters.torneo}'`)
-        if (typeof filters.jornada === 'number') commonConds.push(`{Jornada} = ${filters.jornada}`)
-        if (filters.jugadorId || filters.jugadorNombre) {
-          // Skipping server-side jugador filter; will filter 100% on client.
-          try { console.debug('bocanasApi.getAll: skipping server-side jugador filter; applying on client only') } catch { /* empty */ }
-          jugadorVariants = []
-        }
-      }
+      const params: Record<string, unknown> = { pageSize: 50 }
+      const formula = and(buildServerConds(filters))
+      if (formula) params.filterByFormula = formula
+      logger.debug('bocanasApi.getAll filterByFormula:', formula)
 
-      // Si no hay filtro de jugador en servidor, traer datos y filtrar en cliente si corresponde
-      if (!jugadorVariants.length) {
-        const conds = commonConds
-        if (conds.length) params.filterByFormula = conds.length === 1 ? conds[0] : `AND(${conds.join(', ')})`
-        try { console.debug('bocanasApi.getAll filterByFormula:', params.filterByFormula) } catch { /* empty */ }
-        let records = await fetchAllWithPagination<Bocana>('/Bocanas', params, 1)
-        if (filters?.jugadorId || filters?.jugadorNombre) {
-          const targetName = (filters?.jugadorNombre || '').toLowerCase()
-          const targetRec = filters?.jugadorId || ''
-          records = records.filter(r => {
-            const f: Record<string, any> = (r as any).fields || {}
-            const values = Object.values(f)
-            const nameHit = targetName ? values.some(v => typeof v === 'string' && v.toLowerCase().includes(targetName)) : false
-            const idHit = targetRec ? values.some(v => Array.isArray(v) ? v.includes(targetRec) : (typeof v === 'string' && v.includes(targetRec))) : false
-            return (targetName ? nameHit : false) || (targetRec ? idHit : false)
-          })
-        }
-        return records
-      }
-
-      // Probar variantes de jugador secuencialmente para evitar 422 por campos inexistentes
-      let lastErr: any = null
-      for (const j of jugadorVariants) {
-        const conds = [...commonConds, j]
-        const filter = conds.length === 1 ? conds[0] : `AND(${conds.join(', ')})`
-        const p = { ...params, filterByFormula: filter }
-        try { console.debug('bocanasApi.getAll filterByFormula (try):', filter) } catch { /* empty */ }
-        try {
-          let records = await fetchAllWithPagination<Bocana>('/Bocanas', p)
-          // Aplicar filtro local adicional si hay filtro de jugador
-          if (filters?.jugadorId || filters?.jugadorNombre) {
-            let name = (filters?.jugadorNombre || '').toLowerCase()
-            if (!name && filters?.jugadorId) {
-              try { const ap = await apostadoresApi.getById(filters.jugadorId); name = (ap?.fields?.Nombre || '').toLowerCase() } catch { /* empty */ }
-            }
-            if (name) {
-              records = records.filter(r => String((r.fields as any)?.Jugador_Nombre || '').toLowerCase().includes(name))
-            }
-          }
-          return records
-        } catch (e: any) {
-          lastErr = e
-          if (e?.response?.status === 422) {
-            // probar siguiente variante
-            continue
-          }
-          // otros errores: propagar
-          throw e
-        }
-      }
-      // si ninguna variante funciona (posibles campos no existen), intentar sin filtro de jugador
-      try {
-        const conds = commonConds
-        if (conds.length) params.filterByFormula = conds.length === 1 ? conds[0] : `AND(${conds.join(', ')})`
-        try { console.debug('bocanasApi.getAll filterByFormula (fallback sin jugador):', params.filterByFormula) } catch { /* empty */ }
-        let records = await fetchAllWithPagination<Bocana>('/Bocanas', params, 1)
-        // Filtro local por jugador si venía solicitado
-        if (filters?.jugadorId || filters?.jugadorNombre) {
-          const rec = filters?.jugadorId || ''
-          const name = (filters?.jugadorNombre || '').toLowerCase()
-          records = records.filter(r => {
-            const f = r.fields as any
-            const idMatch = rec && (f?.Jugador_ID === rec || String(f?.Jugador)?.includes(rec))
-            const nameMatch = name && (
-              String(f?.Jugador_Nombre || '').toLowerCase().includes(name) ||
-              String(f?.Apostador_Nombre || '').toLowerCase().includes(name) ||
-              String(f?.Nombre || '').toLowerCase().includes(name)
-            )
-            return (rec ? idMatch : false) || (name ? nameMatch : false)
-          })
-        }
-        return records
-      } catch (e) {
-        throw lastErr || e
-      }
+      const records = await fetchAllWithPagination<Bocana>('/Bocanas', params, 1)
+      return records.filter(r => matchesJugador(r, filters))
     } catch (error) {
-      console.error('Error obteniendo bocanas:', error)
+      logger.error('Error obteniendo bocanas:', error)
       throw error
     }
   },
 
-  // Obtener una página con offset para "Cargar más"
-  getPage: async (filters?: { status?: 'Pagada' | 'Pendiente'; torneo?: 'X Empresarial' | 'XI Empresarial' | 'XII Empresarial'; jugadorId?: string; jugadorNombre?: string; jornada?: number }, offset?: string): Promise<{ records: Bocana[]; offset?: string }> => {
+  getPage: async (
+    filters?: BocanaFilters,
+    offset?: string
+  ): Promise<{ records: Bocana[]; offset?: string }> => {
     try {
-      const params: Record<string, any> = {
-        // 'sort[0][field]': 'Creación',
-        // 'sort[0][direction]': 'desc',
+      const params: Record<string, unknown> = {
         pageSize: 50,
         ...(offset ? { offset } : {}),
       }
-      const commonConds: string[] = []
-      let jugadorVariants: string[] = []
-      if (filters) {
-        if (filters.status) commonConds.push(`{Status} = '${filters.status}'`)
-        if (filters.torneo) commonConds.push(`{Torneo} = '${filters.torneo}'`)
-        if (typeof filters.jornada === 'number') commonConds.push(`{Jornada} = ${filters.jornada}`)
-        if (filters.jugadorId || filters.jugadorNombre) {
-          // Skipping server-side jugador filter; will filter 100% on client.
-          try { console.debug('bocanasApi.getPage: skipping server-side jugador filter; applying on client only') } catch { /* empty */ }
-          jugadorVariants = []
-        }
-      }
+      const formula = and(buildServerConds(filters))
+      if (formula) params.filterByFormula = formula
+      logger.debug('bocanasApi.getPage filterByFormula:', formula)
 
-      // Sin filtro de jugador en servidor: traer y filtrar localmente si aplica
-      if (!jugadorVariants.length) {
-        const conds = commonConds
-        if (conds.length) params.filterByFormula = conds.length === 1 ? conds[0] : `AND(${conds.join(', ')})`
-        try { console.debug('bocanasApi.getPage filterByFormula:', params.filterByFormula) } catch { /* empty */ }
-        const { data } = await api.get('/Bocanas', { params })
-        let recs: Bocana[] = data.records || []
-        if (filters?.jugadorId || filters?.jugadorNombre) {
-          const targetName = (filters?.jugadorNombre || '').toLowerCase()
-          const targetRec = filters?.jugadorId || ''
-          recs = recs.filter(r => {
-            const f: Record<string, any> = (r as any).fields || {}
-            const values = Object.values(f)
-            const nameHit = targetName ? values.some(v => typeof v === 'string' && v.toLowerCase().includes(targetName)) : false
-            const idHit = targetRec ? values.some(v => Array.isArray(v) ? v.includes(targetRec) : (typeof v === 'string' && v.includes(targetRec))) : false
-            return (targetName ? nameHit : false) || (targetRec ? idHit : false)
-          })
-        }
-        return { records: recs, offset: data.offset }
-      }
-
-      // Con filtro de jugador: probar variantes en secuencia
-      let lastErr: any = null
-      for (const j of jugadorVariants) {
-        const conds = [...commonConds, j]
-        const filter = conds.length === 1 ? conds[0] : `AND(${conds.join(', ')})`
-        const p = { ...params, filterByFormula: filter }
-        try { console.debug('bocanasApi.getPage filterByFormula (try):', filter) } catch { /* empty */ }
-        try {
-          const { data } = await api.get('/Bocanas', { params: p })
-          let pageRecords: Bocana[] = data.records || []
-          try {
-            const keys = Array.from(new Set((pageRecords || []).slice(0, 5).flatMap(r => Object.keys((r as any).fields || {}))))
-            console.debug('bocanasApi.getPage sample field keys:', keys)
-          } catch { /* empty */ }
-          // Si vino filtro por jugador y no se encontró nada, reintentar sin jugador y filtrar en cliente
-          if ((filters?.jugadorId || filters?.jugadorNombre) && (!pageRecords || pageRecords.length === 0)) {
-            try {
-              const condsNoJugador = commonConds
-              const p2 = { ...params }
-              if (condsNoJugador.length) (p2 as any).filterByFormula = condsNoJugador.length === 1 ? condsNoJugador[0] : `AND(${condsNoJugador.join(', ')})`
-              try { console.debug('bocanasApi.getPage zero-result retry without jugador. filterByFormula:', (p2 as any).filterByFormula) } catch { /* empty */ }
-              const { data: d2 } = await api.get('/Bocanas', { params: p2 })
-              pageRecords = d2.records || []
-            } catch { /* empty */ }
-          }
-          if (filters?.jugadorId || filters?.jugadorNombre) {
-            let name = (filters?.jugadorNombre || '').toLowerCase()
-            if (!name && filters?.jugadorId) {
-              try { const ap = await apostadoresApi.getById(filters.jugadorId); name = (ap?.fields?.Nombre || '').toLowerCase() } catch { /* empty */ }
-            }
-            if (name) {
-              pageRecords = pageRecords.filter(r => String((r.fields as any)?.Jugador_Nombre || '').toLowerCase().includes(name))
-            }
-          }
-          return { records: pageRecords, offset: data.offset }
-        } catch (e: any) {
-          lastErr = e
-          if (e?.response?.status === 422) {
-            continue
-          }
-          throw e
-        }
-      }
-      // Fallback: sin jugador para no romper la vista
-      try {
-        const conds = commonConds
-        if (conds.length) params.filterByFormula = conds.length === 1 ? conds[0] : `AND(${conds.join(', ')})`
-        try { console.debug('bocanasApi.getPage filterByFormula (fallback sin jugador):', params.filterByFormula) } catch { /* empty */ }
-        const { data } = await api.get('/Bocanas', { params })
-        let pageRecords: Bocana[] = data.records || []
-        try {
-          const keys = Array.from(new Set((pageRecords || []).slice(0, 5).flatMap(r => Object.keys((r as any).fields || {}))))
-          console.debug('bocanasApi.getPage sample field keys (fallback):', keys)
-        } catch { /* empty */ }
-        if (filters?.jugadorId || filters?.jugadorNombre) {
-          let name = (filters?.jugadorNombre || '').toLowerCase()
-          if (!name && filters?.jugadorId) {
-            try { const ap = await apostadoresApi.getById(filters.jugadorId); name = (ap?.fields?.Nombre || '').toLowerCase() } catch { /* empty */ }
-          }
-          if (name) {
-            pageRecords = pageRecords.filter(r => String((r.fields as any)?.Jugador_Nombre || '').toLowerCase().includes(name))
-          }
-        }
-        return { records: pageRecords, offset: data.offset }
-      } catch (e) {
-        throw lastErr || e
-      }
+      const { data } = await api.get('/Bocanas', { params })
+      const records: Bocana[] = (data.records || []).filter((r: Bocana) =>
+        matchesJugador(r, filters)
+      )
+      return { records, offset: data.offset }
     } catch (error) {
-      console.error('Error obteniendo página de bocanas:', error)
+      logger.error('Error obteniendo página de bocanas:', error)
       throw error
     }
   },
 
-  // Crear bocana
-  create: async (data: Omit<Bocana['fields'], 'Ide' | 'creacion' | 'Modificado' | 'Jugador_Nombre'>): Promise<Bocana> => {
+  create: async (
+    data: Omit<Bocana['fields'], 'Ide' | 'creacion' | 'Modificado' | 'Jugador_Nombre'>
+  ): Promise<Bocana> => {
     try {
       const parsed = BocanaCreateSchema.parse(data)
-      const baseFields: any = {
-        // campos comunes
+      const baseFields: Record<string, unknown> = {
         Jornada: parsed.Jornada,
         Tipo: parsed.Tipo,
         Status: parsed.Status,
         Torneo: parsed.Torneo,
-        // NO enviar Comida si no viene en creación
         ...(parsed.Comida ? { Comida: parsed.Comida } : {}),
       }
-      const linkFieldCandidates = ['Jugador_ID', 'Jugador', 'Apostador', 'Apostador_ID']
-      let lastErr: any = null
-      for (const linkField of linkFieldCandidates) {
-        // 1) intentar como arreglo de IDs (link-to-record)
+
+      const fieldsToTry = resolvedJugadorField
+        ? [resolvedJugadorField]
+        : [...JUGADOR_LINK_FIELDS]
+
+      let lastErr: unknown = null
+      for (const linkField of fieldsToTry) {
         for (const variant of ['array', 'string'] as const) {
           const value = variant === 'array' ? [parsed.Jugador_ID] : parsed.Jugador_ID
-          const fields = { ...baseFields, [linkField]: value as any }
+          const fields = { ...baseFields, [linkField]: value }
           try {
-            try { console.debug('bocanas.create try fields:', { linkField, variant, fields }) } catch { /* empty */ }
             const { data: resp } = await api.post('/Bocanas', { records: [{ fields }] })
+            resolvedJugadorField = linkField
             return resp.records[0]
-          } catch (e: any) {
-            // Fallback: Si falla con 422 y tenía comida, intentar sin comida (posible error de opción no válida en Single Select)
-            if (e?.response?.status === 422 && fields.Comida) {
+          } catch (e) {
+            const status = (e as { response?: { status?: number } })?.response?.status
+            // Si falla con 422 y enviamos Comida, reintentar sin ella
+            if (status === 422 && fields.Comida) {
+              const { Comida: _omit, ...fieldsNoFood } = fields
               try {
-                const { Comida, ...fieldsNoFood } = fields
-                try { console.debug('bocanas.create fallback: retrying without Comida field due to 422', { fieldsNoFood }) } catch { /* empty */ }
-                const { data: resp } = await api.post('/Bocanas', { records: [{ fields: fieldsNoFood }] })
+                const { data: resp } = await api.post('/Bocanas', {
+                  records: [{ fields: fieldsNoFood }],
+                })
+                resolvedJugadorField = linkField
                 return resp.records[0]
               } catch (innerE) {
-                // Si falla también sin comida, entonces el error es otro
                 lastErr = innerE
               }
             } else {
               lastErr = e
             }
-            
-            if (!(e?.response?.status === 422)) break
-            // seguir con siguiente variante o siguiente campo
-            continue
+            if (status !== 422) break
           }
         }
       }
       throw lastErr || new Error('No se pudo crear la bocana')
     } catch (error) {
-      if ((error as any)?.response?.data) {
-        console.error('Error creando bocana (detalle Airtable):', JSON.stringify((error as any).response.data, null, 2))
-      }
-      console.error('Error creando bocana:', error)
+      const detail = (error as { response?: { data?: unknown } })?.response?.data
+      if (detail) logger.error('Error creando bocana (detalle Airtable):', detail)
+      logger.error('Error creando bocana:', error)
       throw error
     }
   },
 
-  // Actualizar bocana
   update: async (id: string, data: Partial<Bocana['fields']>): Promise<Bocana> => {
     try {
       const parsed = BocanaUpdateSchema.parse(data)
-      // Campos comunes para update (sin Jugador_Nombre; es computado en la base)
-      const fieldsCommon: any = { ...parsed }
-      // Si no se está cambiando el jugador, un solo patch
+      const fieldsCommon = { ...parsed }
       if (!parsed.Jugador_ID) {
-        const { data: resp } = await api.patch('/Bocanas', { records: [{ id, fields: fieldsCommon }] })
+        const { data: resp } = await api.patch('/Bocanas', {
+          records: [{ id, fields: fieldsCommon }],
+        })
         return resp.records[0]
       }
-      // Si cambia Jugador, intentar con ambos nombres de campo y variaciones
-      const linkFieldCandidatesU = ['Jugador_ID', 'Jugador', 'Apostador', 'Apostador_ID']
-      let lastErrU: any = null
-      for (const linkField of linkFieldCandidatesU) {
+
+      const fieldsToTry = resolvedJugadorField
+        ? [resolvedJugadorField]
+        : [...JUGADOR_LINK_FIELDS]
+
+      let lastErr: unknown = null
+      for (const linkField of fieldsToTry) {
         for (const variant of ['array', 'string'] as const) {
           const value = variant === 'array' ? [parsed.Jugador_ID] : parsed.Jugador_ID
-          const fields = { ...fieldsCommon, [linkField]: value as any }
+          const fields = { ...fieldsCommon, [linkField]: value }
           try {
-            try { console.debug('bocanas.update try fields:', { linkField, variant, fields }) } catch { /* empty */ }
-            const { data: resp } = await api.patch('/Bocanas', { records: [{ id, fields }] })
+            const { data: resp } = await api.patch('/Bocanas', {
+              records: [{ id, fields }],
+            })
+            resolvedJugadorField = linkField
             return resp.records[0]
-          } catch (e: any) {
-            lastErrU = e
-            if (!(e?.response?.status === 422)) break
-            continue
+          } catch (e) {
+            const status = (e as { response?: { status?: number } })?.response?.status
+            lastErr = e
+            if (status !== 422) break
           }
         }
       }
-      throw lastErrU || new Error('No se pudo actualizar la bocana')
+      throw lastErr || new Error('No se pudo actualizar la bocana')
     } catch (error) {
-      console.error('Error actualizando bocana:', error)
+      logger.error('Error actualizando bocana:', error)
       throw error
     }
   },
 
-  // Eliminar bocana
   delete: async (id: string): Promise<void> => {
     try {
       await api.delete(`/Bocanas/${id}`)
     } catch (error) {
-      console.error('Error eliminando bocana:', error)
+      logger.error('Error eliminando bocana:', error)
       throw error
     }
   },

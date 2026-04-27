@@ -1,6 +1,8 @@
 import { api, fetchAllWithPagination } from './api';
 import { Apostador, Apuesta } from '../types';
 import { ApostadorCreateSchema, ApostadorUpdateSchema, ApuestaCreateSchema, ApuestaUpdateSchema } from '../schemas';
+import { and, eqString } from '../lib/airtable-formula';
+import { logger } from '../lib/logger';
 
 // Cache configuration
 let apostadoresCache: { data: Apostador[]; ts: number } | null = null
@@ -55,7 +57,7 @@ export const apostadoresApi = {
       })()
       return await apostadoresInFlight
     } catch (error) {
-      console.error('Error obteniendo apostadores:', error);
+      logger.error('Error obteniendo apostadores:', error);
       throw error;
     }
   },
@@ -66,7 +68,7 @@ export const apostadoresApi = {
       const { data } = await api.get(`/Apostadores/${id}`)
       return data
     } catch (error) {
-      console.error('Error obteniendo apostador por id:', error)
+      logger.error('Error obteniendo apostador por id:', error)
       throw error
     }
   },
@@ -88,7 +90,7 @@ export const apostadoresApi = {
       });
       return response.data.records[0];
     } catch (error) {
-      console.error('Error creando apostador:', error);
+      logger.error('Error creando apostador:', error);
       throw error;
     }
   },
@@ -105,7 +107,7 @@ export const apostadoresApi = {
       });
       return response.data.records[0];
     } catch (error) {
-      console.error('Error actualizando apostador:', error);
+      logger.error('Error actualizando apostador:', error);
       throw error;
     }
   },
@@ -122,7 +124,7 @@ export const apostadoresApi = {
       }
       await api.delete(`/Apostadores/${id}`);
     } catch (error) {
-      console.error('Error eliminando apostador:', error);
+      logger.error('Error eliminando apostador:', error);
       throw error;
     }
   },
@@ -136,7 +138,7 @@ export const apuestasApi = {
       const { data } = await api.get(`/Apuestas/${id}`)
       return data
     } catch (error) {
-      console.error('Error obteniendo apuesta por id:', error)
+      logger.error('Error obteniendo apuesta por id:', error)
       throw error
     }
   },
@@ -149,25 +151,17 @@ export const apuestasApi = {
       }
 
       if (filters) {
-        const filterConditions: string[] = []
-        if (filters.estado) {
-          filterConditions.push(`{Estado} = '${filters.estado}'`)
-        }
-        if (filters.apostadorId) {
-          filterConditions.push(`{Apostador_ID} = '${filters.apostadorId}'`)
-        }
-        if (filterConditions.length > 0) {
-          const filterFormula = filterConditions.length === 1
-            ? filterConditions[0]
-            : `AND(${filterConditions.join(', ')})`
-          params.filterByFormula = filterFormula
-        }
+        const conds: string[] = []
+        if (filters.estado) conds.push(eqString('Estado', filters.estado))
+        if (filters.apostadorId) conds.push(eqString('Apostador_ID', filters.apostadorId))
+        const formula = and(conds)
+        if (formula) params.filterByFormula = formula
       }
 
       const records = await fetchAllWithPagination<Apuesta>('/Apuestas', params)
       return records
     } catch (error) {
-      console.error('Error obteniendo apuestas:', error);
+      logger.error('Error obteniendo apuestas:', error);
       throw error;
     }
   },
@@ -203,7 +197,7 @@ export const apuestasApi = {
       await recalculateApostadorTotals(parsed.Apostador_ID)
       return created;
     } catch (error) {
-      console.error('Error creando apuesta:', error);
+      logger.error('Error creando apuesta:', error);
       throw error;
     }
   },
@@ -249,7 +243,7 @@ export const apuestasApi = {
       }
       return updated;
     } catch (error) {
-      console.error('Error actualizando apuesta:', error);
+      logger.error('Error actualizando apuesta:', error);
       throw error;
     }
   },
@@ -261,7 +255,7 @@ export const apuestasApi = {
       await api.delete(`/Apuestas/${id}`);
       await recalculateApostadorTotals(existing.fields.Apostador_ID)
     } catch (error) {
-      console.error('Error eliminando apuesta:', error);
+      logger.error('Error eliminando apuesta:', error);
       throw error;
     }
   },

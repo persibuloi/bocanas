@@ -11,6 +11,7 @@ import {
   Trophy,
   DollarSign
 } from 'lucide-react';
+import { TORNEOS } from '../lib/torneos';
 
 const NuevaApuesta: React.FC = () => {
   const navigate = useNavigate();
@@ -41,11 +42,7 @@ const NuevaApuesta: React.FC = () => {
   ];
 
   // Opciones alineadas con Airtable (Single select)
-  const torneos = [
-    'X Empresarial',
-    'XI Empresarial',
-    'XII Empresarial'
-  ];
+  const torneos = TORNEOS;
 
   useEffect(() => {
     fetchApostadores();
