@@ -1,45 +1,38 @@
-import React from 'react';
-import { Outlet } from 'react-router-dom';
-import Navbar from './Navbar';
-import { Toaster } from 'react-hot-toast';
+import React from 'react'
+import { Outlet } from 'react-router-dom'
+import Navbar from './Navbar'
+import BottomNav from './BottomNav'
+import { Toaster } from 'react-hot-toast'
 
 const Layout: React.FC = () => {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 text-gray-900">
       <Navbar />
-      
-      {/* Contenido principal */}
-      <div className="lg:pl-64">
-        <main className="py-6 px-4 sm:px-6 lg:px-8">
-          <div className="max-w-7xl mx-auto">
-            <Outlet />
-          </div>
+
+      <div className="lg:pl-72">
+        <main className="pb-24 lg:pb-10">
+          <Outlet />
         </main>
       </div>
-      
-      {/* Notificaciones toast */}
-      <Toaster 
-        position="top-right"
+
+      <BottomNav />
+
+      <Toaster
+        position="top-center"
         toastOptions={{
-          duration: 4000,
+          duration: 3000,
           style: {
-            background: '#363636',
+            background: '#0f172a',
             color: '#fff',
+            borderRadius: '12px',
+            fontSize: '14px',
           },
-          success: {
-            style: {
-              background: '#10B981',
-            },
-          },
-          error: {
-            style: {
-              background: '#EF4444',
-            },
-          },
+          success: { style: { background: '#16a34a' } },
+          error: { style: { background: '#dc2626' } },
         }}
       />
     </div>
-  );
-};
+  )
+}
 
-export default Layout;
+export default Layout

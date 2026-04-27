@@ -1,78 +1,114 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { 
-  Loader2, Filter, BarChart2, Users, CheckCircle2, Clock, X, MessageCircle, Share2,
-  TrendingUp, Award, Target, Utensils, Calendar, Activity, Zap
-} from 'lucide-react'
-import { bocanasApi, Bocana, apostadoresApi, Apostador } from '../lib/airtable'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import DashboardKPI from '../components/DashboardKPI'
-import DashboardHeader from '../components/DashboardHeader'
-import InteractiveCharts from '../components/InteractiveCharts'
-import ProFilters from '../components/ProFilters'
-import AdvancedMetrics from '../components/AdvancedMetrics'
-import TopDeudores from '../components/TopDeudores'
-import { useExport } from '../hooks/useExport'
-import { useIsMobile } from '../hooks/use-mobile'
-import { TORNEOS as torneos } from '../lib/torneos'
+import { RefreshCw, SlidersHorizontal, Loader2, Activity, Calendar, Target, BarChart3 } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { Apostador, Bocana, apostadoresApi, bocanasApi } from '../lib/airtable'
+import { Torneo } from '../lib/torneos'
+import StatCard from '../components/dashboard/StatCard'
+import PendingHero from '../components/dashboard/PendingHero'
+import TopDeudoresList from '../components/dashboard/TopDeudoresList'
+import JornadaTrend from '../components/dashboard/JornadaTrend'
+import TorneoDistribution from '../components/dashboard/TorneoDistribution'
+import ComidasBars from '../components/dashboard/ComidasBars'
+import FilterSheet, { DashboardFilters } from '../components/dashboard/FilterSheet'
+import ActiveFilterChips from '../components/dashboard/ActiveFilterChips'
 
-const statuses = ['Pendiente', 'Pagada'] as const
+const STORAGE_KEY = 'bocanas_dashboard_filters'
 
-interface Filters {
-  status?: (typeof statuses)[number]
-  torneo?: (typeof torneos)[number]
-  jornada?: number
-  jugadorId?: string
-  comida?: string
+const getJugadorRecordId = (b: Bocana): string | undefined => {
+  const fields = b.fields as Record<string, unknown>
+  const pick = (val: unknown): string | undefined => {
+    if (Array.isArray(val)) return typeof val[0] === 'string' ? val[0] : undefined
+    if (typeof val === 'string') return val
+    return undefined
+  }
+  const a = pick(fields.Jugador_ID)
+  const b2 = pick(fields.Jugador)
+  return a && a.startsWith('rec') ? a : b2 || a
+}
+
+const formatRelative = (date: Date): string => {
+  const diff = Math.round((Date.now() - date.getTime()) / 1000)
+  if (diff < 60) return 'hace instantes'
+  if (diff < 3600) return `hace ${Math.floor(diff / 60)} min`
+  if (diff < 86400) return `hace ${Math.floor(diff / 3600)} h`
+  return date.toLocaleDateString()
 }
 
 const BocanasDashboard: React.FC = () => {
-  const [filters, setFilters] = useState<Filters>({})
+  const [filters, setFilters] = useState<DashboardFilters>({})
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<Bocana[]>([])
   const [jugadores, setJugadores] = useState<Apostador[]>([])
-  const [loadingJugadores, setLoadingJugadores] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
+  const [filterOpen, setFilterOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
-  const { exportToCSV, shareWhatsApp } = useExport()
-  const isMobile = useIsMobile()
-  
-  // Helper: obtener el ID de registro del jugador (soporta 'Jugador' o 'Jugador_ID' en array o string)
-  const getJugadorRecordId = (b: Bocana): string | undefined => {
-    const rawIdA: any = (b.fields as any).Jugador_ID
-    const rawIdB: any = (b.fields as any).Jugador
-    const pick = (val: any): string | undefined => {
-      if (Array.isArray(val)) return val[0]
-      if (typeof val === 'string') return val
-      return undefined
-    }
-    const candA = pick(rawIdA)
-    const candB = pick(rawIdB)
-    return (candA && candA.startsWith('rec')) ? candA : (candB || candA)
-  }
 
-  const loadAll = async (override?: Partial<Filters>) => {
+  // Carga inicial: query params > localStorage
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const qp: DashboardFilters = {}
+    const status = params.get('status')
+    const torneo = params.get('torneo')
+    const jornada = params.get('jornada')
+    const jugadorId = params.get('jugadorId')
+    const comida = params.get('comida')
+    if (status === 'Pendiente' || status === 'Pagada') qp.status = status
+    if (torneo) qp.torneo = torneo as Torneo
+    if (jornada && !Number.isNaN(Number(jornada))) qp.jornada = Math.max(1, Number(jornada))
+    if (jugadorId) qp.jugadorId = jugadorId
+    if (comida) qp.comida = comida
+    if (Object.keys(qp).length > 0) {
+      setFilters(qp)
+      return
+    }
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed && typeof parsed === 'object') setFilters(parsed)
+      }
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Persistencia + sync con URL
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(filters))
+    } catch { /* ignore */ }
+    const params = new URLSearchParams()
+    if (filters.status) params.set('status', filters.status)
+    if (filters.torneo) params.set('torneo', filters.torneo)
+    if (typeof filters.jornada === 'number') params.set('jornada', String(filters.jornada))
+    if (filters.jugadorId) params.set('jugadorId', filters.jugadorId)
+    if (filters.comida) params.set('comida', filters.comida)
+    const qs = params.toString()
+    const target = qs ? `/bocanas-dashboard?${qs}` : '/bocanas-dashboard'
+    if (location.pathname === '/bocanas-dashboard' && location.search !== (qs ? `?${qs}` : '')) {
+      navigate(target, { replace: true })
+    }
+  }, [filters, location.pathname, location.search, navigate])
+
+  const loadAll = async (override?: Partial<DashboardFilters>) => {
     setLoading(true)
     try {
       const eff = { ...filters, ...override }
-      let offset: string | undefined = undefined
       const all: Bocana[] = []
-      while (true) {
-        const { records, offset: next } = await bocanasApi.getPage(
-          {
-            status: eff.status,
-            torneo: eff.torneo,
-            jornada: eff.jornada,
-            jugadorId: eff.jugadorId,
-          },
+      let offset: string | undefined
+      do {
+        const page = await bocanasApi.getPage(
+          { status: eff.status, torneo: eff.torneo, jornada: eff.jornada, jugadorId: eff.jugadorId },
           offset
         )
-        all.push(...records)
-        offset = next
-        if (!offset) break
-      }
+        all.push(...page.records)
+        offset = page.offset
+      } while (offset)
       setData(all)
       setLastUpdated(new Date())
+    } catch {
+      toast.error('Error cargando bocanas')
     } finally {
       setLoading(false)
     }
@@ -83,91 +119,12 @@ const BocanasDashboard: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters.status, filters.torneo, filters.jornada, filters.jugadorId, filters.comida])
 
-  // Cargar filtros desde query params o localStorage al montar
   useEffect(() => {
-    const params = new URLSearchParams(location.search)
-    const qp: Filters = {}
-    const qStatus = params.get('status') as any
-    const qTorneo = params.get('torneo') as any
-    const qJornada = params.get('jornada')
-    const qJugadorId = params.get('jugadorId') || undefined
-    const qComida = params.get('comida') || undefined
-    if (qStatus) qp.status = qStatus
-    if (qTorneo) qp.torneo = qTorneo
-    if (qJornada && !Number.isNaN(Number(qJornada))) qp.jornada = Math.max(1, Number(qJornada))
-    if (qJugadorId) qp.jugadorId = qJugadorId
-    if (qComida) qp.comida = qComida
-
-    if (Object.keys(qp).length > 0) {
-      setFilters(qp)
-      return
-    }
-    try {
-      const raw = localStorage.getItem('bocanas_dashboard_filters')
-      if (raw) {
-        const lf = JSON.parse(raw)
-        if (lf && typeof lf === 'object') setFilters(lf)
-      }
-    } catch { /* empty */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    apostadoresApi.getAll().then(setJugadores).catch(() => undefined)
   }, [])
 
-  // Guardar filtros en localStorage y reflejar en query string
-  useEffect(() => {
-    try {
-      localStorage.setItem('bocanas_dashboard_filters', JSON.stringify(filters))
-    } catch { /* empty */ }
-    const params = new URLSearchParams()
-    if (filters.status) params.set('status', String(filters.status))
-    if (filters.torneo) params.set('torneo', String(filters.torneo))
-    if (typeof filters.jornada === 'number') params.set('jornada', String(filters.jornada))
-    if (filters.jugadorId) params.set('jugadorId', String(filters.jugadorId))
-    if (filters.comida) params.set('comida', String(filters.comida))
-    const qs = params.toString()
-    const nextUrl = qs ? (`/bocanas-dashboard?${qs}`) : '/bocanas-dashboard'
-    if (location.pathname === '/bocanas-dashboard' && (location.search || '') !== (qs ? `?${qs}` : '')) {
-      navigate(nextUrl, { replace: true })
-    }
-  }, [filters, location.pathname, location.search, navigate])
-
-  // Cargar lista de jugadores (reutilizable)
-  const fetchJugadores = async () => {
-    setLoadingJugadores(true)
-    try {
-      const list = await apostadoresApi.getAll()
-      setJugadores(list)
-    } finally {
-      setLoadingJugadores(false)
-    }
-  }
-  useEffect(() => { fetchJugadores() }, [])
-
-  // Cuando se quita el filtro de comida, recargar jugadores
-  const prevComidaRef = useRef<string | undefined>(undefined)
-  useEffect(() => {
-    const prev = prevComidaRef.current
-    // Si antes había filtro de comida y ahora ya no, recargamos jugadores
-    if (prev && !filters.comida) {
-      ;(async () => {
-        setLoadingJugadores(true)
-        try {
-          const list = await apostadoresApi.getAll()
-          setJugadores(list)
-        } finally {
-          setLoadingJugadores(false)
-        }
-      })()
-    }
-    prevComidaRef.current = filters.comida
-  }, [filters.comida])
-
   const kpis = useMemo(() => {
-    // Aplicar filtros localmente para asegurar que el dashboard reaccione aunque el backend no filtre perfecto
     const base = data.filter(b => {
-      if (filters.status && b.fields.Status !== filters.status) return false
-      if (filters.torneo && b.fields.Torneo !== filters.torneo) return false
-      if (typeof filters.jornada === 'number' && b.fields.Jornada !== filters.jornada) return false
-      if (filters.jugadorId && getJugadorRecordId(b) !== filters.jugadorId) return false
       if (filters.comida && String(b.fields.Comida || '') !== filters.comida) return false
       return true
     })
@@ -175,543 +132,228 @@ const BocanasDashboard: React.FC = () => {
     const total = base.length
     const pagadas = base.filter(b => b.fields.Status === 'Pagada').length
     const pendientes = base.filter(b => b.fields.Status === 'Pendiente').length
+    const tasaPago = total > 0 ? Math.round((pagadas / total) * 100) : 0
+
+    const porTipo = new Map<string, number>()
     const porTorneo = new Map<string, number>()
     const porJornada = new Map<number, number>()
-    // Agrupar pendientes por Jugador_ID (clave estable) y mostrar nombre si existe
     const porJugadorPend = new Map<string, { count: number; name: string }>()
-    const comidas = new Map<string, number>()
-    const comidasDet = new Map<string, Map<string, number>>() // comida -> jugadorNombre -> count
+    const comidasMap = new Map<string, number>()
 
     for (const b of base) {
-      const t = b.fields.Torneo || '—'
-      porTorneo.set(t, (porTorneo.get(t) || 0) + 1)
+      const tipo = b.fields.Tipo || '—'
+      porTipo.set(tipo, (porTipo.get(tipo) || 0) + 1)
+      const torneo = b.fields.Torneo || '—'
+      porTorneo.set(torneo, (porTorneo.get(torneo) || 0) + 1)
       const j = Number(b.fields.Jornada || 0)
-      if (!Number.isNaN(j)) porJornada.set(j, (porJornada.get(j) || 0) + 1)
-      const playerId = getJugadorRecordId(b)
-      const playerNameFallback = jugadores.find(x => x.id === playerId)?.fields.Nombre
+      if (!Number.isNaN(j) && j > 0) porJornada.set(j, (porJornada.get(j) || 0) + 1)
       if (b.fields.Status === 'Pendiente') {
-        const rawIdA: any = (b.fields as any).Jugador_ID
-        const rawIdB: any = (b.fields as any).Jugador
-        // Elegir un ID válido de Airtable (que comience con 'rec') cuando sea posible
-        const pick = (val: any): string | undefined => {
-          if (Array.isArray(val)) return val[0]
-          if (typeof val === 'string') return val
-          return undefined
-        }
-        const candA = pick(rawIdA)
-        const candB = pick(rawIdB)
-        const chosen = (candA && candA.startsWith('rec')) ? candA : (candB || candA)
-        const id = String(chosen || 'unknown')
-        const name = String(b.fields.Jugador_Nombre || playerNameFallback || id)
+        const id = getJugadorRecordId(b) || 'unknown'
+        const fallbackName = jugadores.find(x => x.id === id)?.fields.Nombre
+        const name = String(b.fields.Jugador_Nombre || fallbackName || id)
         const prev = porJugadorPend.get(id)
         porJugadorPend.set(id, { count: (prev?.count || 0) + 1, name })
       }
-      if (b.fields.Status === 'Pagada' && b.fields.Comida) {
+      if (b.fields.Comida) {
         const c = String(b.fields.Comida)
-        comidas.set(c, (comidas.get(c) || 0) + 1)
-        const name = String(b.fields.Jugador_Nombre || playerNameFallback || '—')
-        const by = comidasDet.get(c) || new Map<string, number>()
-        by.set(name, (by.get(name) || 0) + 1)
-        comidasDet.set(c, by)
+        comidasMap.set(c, (comidasMap.get(c) || 0) + 1)
       }
     }
 
-    const topPendDet = Array.from(porJugadorPend.entries())
-      .map(([id, v]) => ({ id, name: v.name, count: v.count }))
-      .sort((a, b) => b.count - a.count || String(a.name).localeCompare(String(b.name)))
-    const topPend = topPendDet.map(v => [v.name, v.count] as [string, number])
+    const tipoMasComun = Array.from(porTipo.entries()).sort((a, b) => b[1] - a[1])[0]
+    const jornadasOrdenadas = Array.from(porJornada.keys()).sort((a, b) => a - b)
+    const jornadaActiva = jornadasOrdenadas[jornadasOrdenadas.length - 1]
+    const promedioPorJornada = jornadasOrdenadas.length > 0 ? Math.round(total / jornadasOrdenadas.length) : 0
 
-    const topComidas = Array.from(comidas.entries())
-      .sort((a, b) => b[1] - a[1])
+    const trendData = jornadasOrdenadas
+      .slice(-8)
+      .map(j => ({ name: `J${j}`, value: porJornada.get(j) || 0 }))
+
+    const torneoData = Array.from(porTorneo.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+
+    const topDeudores = Array.from(porJugadorPend.entries())
+      .map(([id, v]) => ({ id, name: v.name, count: v.count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
       .slice(0, 5)
 
-    const topComidasDet = topComidas.map(([c, cnt]) => ({
-      name: c,
-      count: cnt,
-      players: Array.from((comidasDet.get(c) || new Map()).entries())
-        .map(([name, n]) => ({ name, count: n }))
-        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
-    }))
+    const topComidas = Array.from(comidasMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, count]) => ({ name, count }))
 
-    const jornadasRecientes = Array.from(porJornada.entries())
-      .sort((a, b) => b[0] - a[0])
-      .slice(0, 6)
-
-    // Datos para gráficos interactivos
-    const chartData = {
-      porTorneo: Array.from(porTorneo.entries()).map(([name, value]) => ({ name, value })),
-      porJornada: Array.from(porJornada.entries())
-        .sort((a, b) => a[0] - b[0])
-        .map(([jornada, value]) => ({ name: `J${jornada}`, value })),
-      porComida: topComidas.map(([name, value]) => ({ name, value })),
-      tendenciaSemanal: jornadasRecientes.map(([jornada, value]) => ({ 
-        name: `J${jornada}`, 
-        value 
-      }))
+    return {
+      total, pagadas, pendientes, tasaPago,
+      tipoMasComun: tipoMasComun ? tipoMasComun[0] : '—',
+      tipoMasComunCount: tipoMasComun ? tipoMasComun[1] : 0,
+      jornadaActiva: jornadaActiva || 0,
+      promedioPorJornada,
+      trendData, torneoData, topDeudores, topComidas,
     }
-    
-    return { 
-      total, pagadas, pendientes, porTorneo, porJornada, topPend, topComidas, 
-      recientes: jornadasRecientes, topPendDet, topComidasDet, chartData 
-    }
-  }, [data, filters.status, filters.torneo, filters.jornada, filters.jugadorId, filters.comida, jugadores])
+  }, [data, filters.comida, jugadores])
 
-  // Pendientes agrupados por Torneo para el jugador seleccionado
-  const pendientesPorTorneo = useMemo(() => {
-    if (!filters.jugadorId) return [] as Array<{ torneo: string; items: Bocana[] }>
-    const pendientes = data
-      .filter(b => b.fields.Status === 'Pendiente' && getJugadorRecordId(b) === filters.jugadorId)
-    const map = new Map<string, Bocana[]>()
-    for (const b of pendientes) {
-      const t = b.fields.Torneo || '—'
-      const arr = map.get(t) || []
-      arr.push(b)
-      map.set(t, arr)
-    }
-    return Array.from(map.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([torneo, items]) => ({
-        torneo,
-        items: items.slice().sort((x, y) => (Number(x.fields.Jornada) || 0) - (Number(y.fields.Jornada) || 0))
-      }))
-  }, [data, filters.jugadorId])
-
-  // Nombre del jugador seleccionado para mensajes
-  const jugadorSeleccionadoNombre = useMemo(() => {
-    if (!filters.jugadorId) return ''
-    const j = jugadores.find(x => x.id === filters.jugadorId)
-    return j?.fields.Nombre || ''
-  }, [filters.jugadorId, jugadores])
-
-  // Texto para compartir TODOS los pendientes del jugador
-  const shareTextAll = useMemo(() => {
-    if (!filters.jugadorId || pendientesPorTorneo.length === 0) return ''
-    const header = jugadorSeleccionadoNombre ? `🟡 Pendientes de *${jugadorSeleccionadoNombre}*:` : '🟡 Pendientes:'
-    const lines: string[] = [header]
-    pendientesPorTorneo.forEach(group => {
-      lines.push(`\n• Torneo *${group.torneo}*`)
-      group.items.forEach(b => {
-        const jor = `J${b.fields.Jornada}`
-        const tipo = b.fields.Tipo
-        lines.push(`  - 🎳 ${jor} · *${tipo}*`)
-      })
-    })
-    return lines.join('\n')
-  }, [pendientesPorTorneo, filters.jugadorId, jugadorSeleccionadoNombre])
-
-  const shareAllToWhatsApp = () => {
-    if (!shareTextAll) return
-    const url = `https://wa.me/?text=${encodeURIComponent(shareTextAll)}`
-    window.open(url, '_blank')
-  }
-
-  const shareGroupToWhatsApp = (torneo: string) => {
-    const group = pendientesPorTorneo.find(g => g.torneo === torneo)
-    if (!group) return
-    const header = jugadorSeleccionadoNombre ? `🟡 Pendientes de *${jugadorSeleccionadoNombre}* – Torneo *${torneo}*:` : `🟡 Pendientes – Torneo *${torneo}*:`
-    const lines: string[] = [header]
-    group.items.forEach(b => {
-      const jor = `J${b.fields.Jornada}`
-      const tipo = b.fields.Tipo
-      lines.push(`  - 🎳 ${jor} · *${tipo}*`)
-    })
-    const text = lines.join('\n')
-    const url = `https://wa.me/?text=${encodeURIComponent(text)}`
-    window.open(url, '_blank')
-  }
-
-  const Bar: React.FC<{ label: string; value: number; max: number; onClick?: () => void }> = ({ label, value, max, onClick }) => (
-    <div className={`mb-2 ${onClick ? 'cursor-pointer group' : ''}`} onClick={onClick}>
-      <div className="flex justify-between text-sm text-gray-600"><span>{label}</span><span>{value}</span></div>
-      <div className={`w-full h-2 rounded ${onClick ? 'bg-gray-100 group-hover:bg-gray-200 transition-colors' : 'bg-gray-100'}`}>
-        <div className={`h-2 rounded ${onClick ? 'bg-blue-600 group-hover:bg-blue-700 transition-colors' : 'bg-blue-600'}`} style={{ width: `${max ? (value / max) * 100 : 0}%` }} />
-      </div>
-    </div>
+  const comidasOpciones = useMemo(
+    () => Array.from(new Set(data.map(b => b.fields.Comida).filter(Boolean) as string[])).sort(),
+    [data]
   )
 
-  const maxPend = kpis.topPend.length ? kpis.topPend[0][1] : 0
-  const maxComida = kpis.topComidas.length ? kpis.topComidas[0][1] : 0
-  const maxTorneo = kpis.porTorneo.size ? Math.max(...Array.from(kpis.porTorneo.values())) : 0
+  const jugadoresOpciones = useMemo(
+    () => jugadores.map(j => ({ id: j.id, name: j.fields.Nombre })),
+    [jugadores]
+  )
 
-  // Compartir Top deudores (pendientes)
-  const shareTopPendText = useMemo(() => {
-    if (!kpis.topPendDet.length) return ''
-    const title = '🏆 *Top deudores (pendientes)*'
-    const medal = (i: number) => (i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '🔹')
-    const lines = [title]
-    kpis.topPendDet.forEach((item, idx) => {
-      lines.push(`${medal(idx)} *${item.name}* — *${item.count}*`)
-    })
-    return lines.join('\n')
-  }, [kpis.topPendDet])
+  const jugadorSeleccionado = filters.jugadorId
+    ? jugadores.find(j => j.id === filters.jugadorId)?.fields.Nombre
+    : undefined
 
-  const shareTopPendToWhatsApp = () => {
-    if (!shareTopPendText) return
-    const url = `https://wa.me/?text=${encodeURIComponent(shareTopPendText)}`
-    window.open(url, '_blank')
+  const activeFilterCount = Object.values(filters).filter(v => v !== undefined && v !== '').length
+
+  const shareTopDeudores = () => {
+    if (kpis.topDeudores.length === 0) return
+    const medal = (i: number) => (['🥇', '🥈', '🥉'][i] || '🔹')
+    const lines = ['🏆 *Top deudores (pendientes)*']
+    kpis.topDeudores.forEach((d, i) => lines.push(`${medal(i)} *${d.name}* — ${d.count}`))
+    window.open(`https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`, '_blank')
+  }
+
+  const clearOne = (key: keyof DashboardFilters) => {
+    setFilters(prev => ({ ...prev, [key]: undefined }))
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header moderno */}
-      <DashboardHeader
-        title="Dashboard de Bocanas"
-        subtitle="Analytics y métricas en tiempo real"
-        onRefresh={() => loadAll()}
-        onClearFilters={() => setFilters({})}
-        onExport={() => exportToCSV(data, 'dashboard-bocanas')}
-        onShare={() => shareWhatsApp(data, 'Dashboard de Bocanas')}
-        loading={loading}
-        lastUpdated={lastUpdated}
-      />
-      {(filters.jugadorId || filters.comida) && (
-        <div className="mb-4">
-          <div className="flex gap-2 flex-wrap">
-            {filters.jugadorId && (
-              <span className="inline-flex items-center text-sm bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 rounded-full">
-                Jugador: {jugadores.find(j => j.id === filters.jugadorId)?.fields.Nombre || filters.jugadorId}
-                <button
-                  className="ml-2 hover:text-blue-900"
-                  onClick={() => setFilters(f => ({ ...f, jugadorId: undefined, status: undefined }))}
-                  title="Limpiar filtro"
-                >
-                  <X size={14} />
-                </button>
-              </span>
-            )}
-            {filters.comida && (
-              <span className="inline-flex items-center text-sm bg-green-50 text-green-700 border border-green-200 px-3 py-1 rounded-full">
-                Comida: {filters.comida}
-                <button
-                  className="ml-2 hover:text-green-900"
-                  onClick={async () => {
-                    const next: Filters = { ...filters, comida: undefined, status: undefined }
-                    setFilters(next)
-                    await Promise.all([loadAll(next), fetchJugadores()])
-                  }}
-                  title="Limpiar filtro comida"
-                >
-                  <X size={14} />
-                </button>
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Métricas Súper Avanzadas */}
-      <AdvancedMetrics data={data} loading={loading} />
-
-      {/* Gráficos interactivos */}
-      <div className="mb-8">
-        <InteractiveCharts
-          data={kpis.chartData}
-          loading={loading}
-        />
-      </div>
-      
-      {/* Sección de analytics avanzados */}
-      <div className={`grid gap-6 mb-8 ${
-        isMobile 
-          ? 'grid-cols-1' 
-          : 'grid-cols-1 lg:grid-cols-3'
-      }`}>
-        {/* Top Deudores Súper Elegante */}
-        <TopDeudores
-          deudores={kpis.topPendDet}
-          onSelectJugador={(jugadorId) => 
-            setFilters(f => ({ ...f, jugadorId, status: 'Pendiente', torneo: undefined, jornada: undefined }))
-          }
-          onShare={shareTopPendToWhatsApp}
-          loading={loading}
-        />
-        {/* Comidas Más Populares */}
-        <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center space-x-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center">
-                <Utensils size={24} className="text-white" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Comidas Populares</h3>
-                <p className="text-sm text-gray-500">Más pedidas</p>
-              </div>
-            </div>
-            {filters.comida && (
-              <button
-                type="button"
-                className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                onClick={async () => {
-                  const next: Filters = { ...filters, comida: undefined, status: undefined }
-                  setFilters(next)
-                  await Promise.all([loadAll(next), fetchJugadores()])
-                }}
-              >Quitar filtro</button>
-            )}
-          </div>
-          
-          {kpis.topComidasDet.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              <Utensils className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-              <p>No hay datos de comidas</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {kpis.topComidasDet.map((item, index) => {
-                const percentage = maxComida > 0 ? (item.count / maxComida) * 100 : 0;
-                const isExpanded = filters.comida === item.name;
-                
-                return (
-                  <div key={item.name}>
-                    <div
-                      onClick={() => setFilters(f => ({ ...f, comida: item.name, status: 'Pagada' }))}
-                      className="group p-4 rounded-xl border border-gray-200 hover:border-orange-300 hover:bg-orange-50 transition-all cursor-pointer"
-                    >
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-red-400 rounded-lg flex items-center justify-center text-white font-bold text-sm">
-                            #{index + 1}
-                          </div>
-                          <span className="font-semibold text-gray-900 group-hover:text-orange-700">{item.name}</span>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <span className="text-2xl font-bold text-orange-600">{item.count}</span>
-                          <span className="text-sm text-gray-500">pedidos</span>
-                        </div>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-3">
-                        <div 
-                          className="bg-gradient-to-r from-orange-500 to-red-500 h-3 rounded-full transition-all duration-1000 ease-out"
-                          style={{ width: `${percentage}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                    
-                    {isExpanded && (
-                      <div className="mt-3 ml-4 p-4 bg-orange-50 border border-orange-200 rounded-xl">
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="font-medium text-orange-900">Quiénes la pidieron</h4>
-                          <button
-                            type="button"
-                            className="inline-flex items-center px-3 py-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm"
-                            onClick={() => {
-                              const lines = [
-                                `🍽️ *${item.name}* — *${item.count}* pedido(s)`,
-                                ...item.players.map(p => `• ${p.name} — ${p.count}`)
-                              ]
-                              const url = `https://wa.me/?text=${encodeURIComponent(lines.join('\n'))}`
-                              window.open(url, '_blank')
-                            }}
-                          >
-                            <Share2 size={14} className="mr-1" /> Compartir
-                          </button>
-                        </div>
-                        {item.players.length === 0 ? (
-                          <div className="text-sm text-orange-600">Sin detalle disponible</div>
-                        ) : (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {item.players.map(p => (
-                              <div key={p.name} className="flex items-center justify-between p-2 bg-white rounded-lg border border-orange-200">
-                                <span className="text-sm font-medium text-gray-900">{p.name}</span>
-                                <span className="text-sm font-bold text-orange-600">×{p.count}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        {/* Actividad por Jornadas */}
-        <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center space-x-3 mb-6">
-            <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-xl flex items-center justify-center">
-              <Activity size={24} className="text-white" />
-            </div>
+      {/* Header sticky */}
+      <header className="sticky top-0 z-20 bg-gray-50/85 backdrop-blur-md">
+        <div className="px-4 py-4 sm:px-6 lg:px-10 lg:pt-8">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Actividad por Jornadas</h3>
-              <p className="text-sm text-gray-500">Distribución reciente</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                Dashboard
+              </p>
+              <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
+                Resumen de bocanas
+              </h1>
+              <p className="mt-0.5 text-xs text-gray-500">
+                Actualizado {formatRelative(lastUpdated)}
+              </p>
             </div>
-          </div>
-          
-          <div className="space-y-3 max-h-80 overflow-auto">
-            {Array.from(kpis.porJornada.entries())
-              .sort((a,b) => b[0] - a[0])
-              .slice(0, 8)
-              .map(([jornada, valor], index) => {
-                const maxJornada = Math.max(...Array.from(kpis.porJornada.values()), 1);
-                const percentage = (valor / maxJornada) * 100;
-                
-                return (
-                  <div key={jornada} className="group p-3 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 bg-gradient-to-br from-indigo-400 to-purple-400 rounded-lg flex items-center justify-center text-white font-bold text-sm">
-                          {jornada}
-                        </div>
-                        <span className="font-medium text-gray-900 group-hover:text-indigo-700">Jornada {jornada}</span>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-xl font-bold text-indigo-600">{valor}</span>
-                        <span className="text-sm text-gray-500">bocanas</span>
-                      </div>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full transition-all duration-1000 ease-out"
-                        style={{ width: `${percentage}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                );
-              })
-            }
-          </div>
-        </div>
-      </div>
-
-      {/* Sistema de filtros súper profesional */}
-      <ProFilters
-        filters={filters}
-        onFiltersChange={(newFilters) => {
-          setFilters(prev => ({ ...prev, ...newFilters }));
-        }}
-        jugadores={jugadores}
-        loading={loadingJugadores}
-      />
-
-      {/* Sección de pendientes del jugador seleccionado */}
-      {filters.jugadorId && (
-        <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl border-2 border-yellow-200 p-6 mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center space-x-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-xl flex items-center justify-center">
-                <Zap size={24} className="text-white" />
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Pendientes del Jugador</h3>
-                <p className="text-sm text-gray-600">{jugadorSeleccionadoNombre}</p>
-              </div>
-            </div>
-            {pendientesPorTorneo.length > 0 && (
+            <div className="flex shrink-0 items-center gap-2">
               <button
-                type="button"
-                onClick={shareAllToWhatsApp}
-                className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl hover:from-green-600 hover:to-emerald-600 transition-all shadow-lg"
-                title="Compartir todo por WhatsApp"
+                onClick={() => loadAll()}
+                disabled={loading}
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-gray-600 ring-1 ring-gray-200 transition-colors active:bg-gray-100 disabled:opacity-60"
+                aria-label="Actualizar"
               >
-                <MessageCircle size={16} className="mr-2" /> 
-                Compartir Todo
+                {loading ? (
+                  <Loader2 size={18} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={18} />
+                )}
               </button>
-            )}
-          </div>
-          
-          {pendientesPorTorneo.length === 0 ? (
-            <div className="text-center py-12">
-              <CheckCircle2 className="h-16 w-16 mx-auto mb-4 text-green-400" />
-              <p className="text-lg font-semibold text-gray-900 mb-2">¡Excelente!</p>
-              <p className="text-gray-600">Este jugador no tiene bocanas pendientes</p>
+              <button
+                onClick={() => setFilterOpen(true)}
+                className="relative flex h-10 items-center gap-2 rounded-xl bg-white px-3.5 text-sm font-semibold text-gray-700 ring-1 ring-gray-200 active:bg-gray-100"
+              >
+                <SlidersHorizontal size={16} />
+                Filtros
+                {activeFilterCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-white">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
             </div>
-          ) : (
-            <div className="space-y-6">
-              {pendientesPorTorneo.map(group => (
-                <div key={group.torneo} className="bg-white rounded-xl p-5 border border-yellow-200 shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-lg flex items-center justify-center">
-                        <Target size={16} className="text-white" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-gray-900">{group.torneo}</h4>
-                        <p className="text-sm text-gray-500">{group.items.length} bocana{group.items.length !== 1 ? 's' : ''} pendiente{group.items.length !== 1 ? 's' : ''}</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => shareGroupToWhatsApp(group.torneo)}
-                      className="inline-flex items-center px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm"
-                      title="Compartir este torneo por WhatsApp"
-                    >
-                      <Share2 size={14} className="mr-1" /> Compartir
-                    </button>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {group.items.map(b => {
-                      const creationDate = (() => {
-                        const f: any = b.fields as any
-                        const c = f['Creación'] || f['Creacion'] || f['creacion']
-                        return c ? new Date(c).toLocaleDateString() : '—'
-                      })();
-                      
-                      return (
-                        <div key={b.id} className="bg-gradient-to-br from-yellow-50 to-orange-50 border border-yellow-200 rounded-lg p-4 hover:shadow-md transition-all">
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="inline-flex items-center px-2 py-1 bg-yellow-200 text-yellow-800 rounded-full text-xs font-semibold">
-                              <Clock size={10} className="mr-1" />
-                              Pendiente
-                            </div>
-                            <span className="text-xs text-gray-500">{creationDate}</span>
-                          </div>
-                          
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-semibold text-gray-900">Jornada {b.fields.Jornada}</span>
-                              <div className="w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center">
-                                <span className="text-indigo-700 font-bold text-xs">{b.fields.Jornada}</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <Target size={12} className="text-gray-500" />
-                              <span className="text-sm text-gray-700">{b.fields.Tipo}</span>
-                            </div>
-                            {b.fields.Comida && (
-                              <div className="flex items-center space-x-2">
-                                <Utensils size={12} className="text-gray-500" />
-                                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{String(b.fields.Comida)}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+          </div>
+
+          {activeFilterCount > 0 && (
+            <div className="mt-3">
+              <ActiveFilterChips
+                filters={filters}
+                jugadorName={jugadorSeleccionado}
+                onClear={clearOne}
+              />
             </div>
           )}
         </div>
-      )}
+      </header>
 
-      {/* Botón para ir al listado */}
-      <div className="text-center py-8">
-        <button
-          onClick={() => {
-            const params = new URLSearchParams()
-            if (filters.status) params.set('status', String(filters.status))
-            if (filters.torneo) params.set('torneo', String(filters.torneo))
-            if (typeof filters.jornada === 'number') params.set('jornada', String(filters.jornada))
-            if (filters.jugadorId) params.set('jugadorId', String(filters.jugadorId))
-            if (filters.comida) params.set('comida', String(filters.comida))
-            navigate(`/bocanas?${params.toString()}`)
-          }}
-          className="inline-flex items-center px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl hover:from-blue-700 hover:to-purple-700 transition-all shadow-lg hover:shadow-xl font-semibold text-lg group"
-        >
-          <BarChart2 size={20} className="mr-3 group-hover:scale-110 transition-transform" />
-          Ver Listado Completo
-        </button>
-      </div>
-      
-      {loading && (
-        <div className="fixed bottom-4 right-4 bg-white rounded-xl shadow-lg border border-gray-200 px-4 py-3 flex items-center space-x-3">
-          <Loader2 className="animate-spin h-5 w-5 text-blue-600" />
-          <span className="text-gray-700 font-medium">Actualizando métricas...</span>
+      {/* Contenido */}
+      <div className="space-y-4 px-4 pb-6 pt-2 sm:px-6 lg:px-10">
+        <PendingHero
+          pendientes={kpis.pendientes}
+          pagadas={kpis.pagadas}
+          total={kpis.total}
+        />
+
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatCard
+            label="Total bocanas"
+            value={kpis.total}
+            icon={BarChart3}
+            tone="info"
+            hint={`${kpis.promedioPorJornada}/jornada`}
+          />
+          <StatCard
+            label="Tasa de pago"
+            value={`${kpis.tasaPago}%`}
+            icon={Target}
+            tone="success"
+            hint={`${kpis.pagadas} pagadas`}
+          />
+          <StatCard
+            label="Tipo más común"
+            value={kpis.tipoMasComun}
+            icon={Activity}
+            tone="warning"
+            hint={kpis.tipoMasComunCount > 0 ? `${kpis.tipoMasComunCount} casos` : undefined}
+          />
+          <StatCard
+            label="Última jornada"
+            value={kpis.jornadaActiva > 0 ? `J${kpis.jornadaActiva}` : '—'}
+            icon={Calendar}
+            tone="default"
+            hint="con bocanas"
+          />
         </div>
-      )}
+
+        <JornadaTrend data={kpis.trendData} />
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <TorneoDistribution
+            data={kpis.torneoData}
+            active={filters.torneo}
+            onSelect={t =>
+              setFilters(prev => ({ ...prev, torneo: prev.torneo === t ? undefined : (t as Torneo) }))
+            }
+          />
+          <ComidasBars
+            data={kpis.topComidas}
+            active={filters.comida}
+            onSelect={c =>
+              setFilters(prev => ({ ...prev, comida: prev.comida === c ? undefined : c }))
+            }
+          />
+        </div>
+
+        <TopDeudoresList
+          deudores={kpis.topDeudores}
+          onSelect={id =>
+            setFilters(prev => ({ ...prev, jugadorId: id, status: 'Pendiente' }))
+          }
+          onShare={shareTopDeudores}
+        />
+      </div>
+
+      <FilterSheet
+        open={filterOpen}
+        onOpenChange={setFilterOpen}
+        filters={filters}
+        onChange={setFilters}
+        onClear={() => setFilters({})}
+        jugadores={jugadoresOpciones}
+        comidas={comidasOpciones}
+      />
     </div>
   )
 }
